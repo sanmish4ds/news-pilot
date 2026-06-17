@@ -24,6 +24,14 @@ export const metadata: Metadata = {
     url: SITE_URL,
     siteName: "The News Noice",
     type: "website",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "The News Noice: Today's Top 10 India News",
+      },
+    ],
   },
   twitter: {
     card: "summary",
