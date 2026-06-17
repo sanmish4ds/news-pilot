@@ -471,7 +471,7 @@ export function NewsRadioApp() {
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/20 mb-4">
             <Radio className="w-4 h-4 text-teal-400" />
             <span className="text-xs font-semibold text-teal-300 tracking-widest uppercase">
-              News Pilot
+              The News Noice
             </span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight leading-tight">

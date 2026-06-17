@@ -8,9 +8,22 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "News Pilot | Listen to Today's Top 10 India News",
+  title: "The News Noice",
   description:
-    "Top 10 news of the day from India. Listen in all 22 constitutional languages. Made for easy listening.",
+    "Listen to today's top 10 news from India in all 22 constitutional languages. Made for easy listening.",
+  openGraph: {
+    title: "The News Noice",
+    description:
+      "Listen to today's top 10 news from India in all 22 constitutional languages.",
+    siteName: "The News Noice",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "The News Noice",
+    description:
+      "Listen to today's top 10 news from India in all 22 constitutional languages.",
+  },
 };
 
 export const viewport: Viewport = {
