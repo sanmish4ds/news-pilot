@@ -30,46 +30,56 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
-## Deploy on Render
+## Deploy on Netlify (recommended)
 
 ### 1. Push to GitHub
 
 ```bash
 git add .
-git commit -m "Prepare News Pilot for Render deployment"
-git push -u origin main
+git commit -m "Add Netlify deployment config"
+git push origin main
 ```
 
-### 2. Create the web service
+### 2. Create site on Netlify
 
-1. Go to [dashboard.render.com](https://dashboard.render.com)
-2. **New +** → **Blueprint** (if `render.yaml` is in the repo) **or** **Web Service**
-3. Connect repo `sanmish4ds/news-pilot`
-4. Settings (if not using Blueprint):
+1. Go to [app.netlify.com](https://app.netlify.com) → **Add new site** → **Import an existing project**
+2. Connect GitHub → select `sanmish4ds/news-pilot`
+3. Netlify auto-detects Next.js 16 — settings from `netlify.toml`:
 
 | Setting | Value |
 |---------|-------|
-| Runtime | Node |
-| Build Command | `npm ci && npm run build` |
-| Start Command | `npm start` |
-| Region | Singapore (closest to India) |
+| Build command | `npm run build` |
+| Publish directory | `.next` |
+| Node version | 20 |
+
+4. Click **Deploy site**
 
 ### 3. Environment variables
 
-Set these in Render → **Environment**:
+Netlify → **Site configuration** → **Environment variables** → **Add a variable**:
 
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `OPENAI_API_KEY` | Yes | News translation |
-| `SARVAM_API_KEY` | Yes | Text-to-speech |
-| `BHASHINI_API_KEY` | No | Native Maithili fallback |
-| `ELEVENLABS_API_KEY` | No | English fallback |
+| Variable | Required |
+|----------|----------|
+| `OPENAI_API_KEY` | Yes |
+| `SARVAM_API_KEY` | Yes |
+| `BHASHINI_API_KEY` | No (Maithili native voice) |
 
-### 4. Deploy
+Redeploy after adding variables (**Deploys** → **Trigger deploy** → **Clear cache and deploy site**).
 
-Click **Deploy**. Render builds with `npm run build` and runs `npm start` on the assigned URL (`https://news-pilot-xxxx.onrender.com`).
+### 4. Live URL
 
-> **Note:** Full bulletin TTS can take 30–90 seconds. Use Render **Starter** plan or higher for longer request timeouts. Story-by-story mode works better on free tier.
+Netlify gives you `https://random-name.netlify.app`. Customize under **Domain management**.
+
+> **Timeout note:** Netlify serverless functions have a **10s limit** on the free plan (26s on Pro). Use **Each Story** mode for reliable audio. Full bulletin TTS may timeout on free tier.
+
+## Deploy on Render (alternative)
+
+See `render.yaml` and `Dockerfile`. Use **Docker** or **Node** runtime — not Elixir.
+
+| Setting | Value |
+|---------|-------|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `npm start` |
 
 ## How it works
 
