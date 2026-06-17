@@ -5,6 +5,7 @@ services:
     runtime: node
     plan: starter
     region: singapore
+    rootDir: .
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /
