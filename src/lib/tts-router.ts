@@ -74,7 +74,7 @@ export function getTtsStatus(languageCode?: string) {
     provider,
     sarvamFallback,
     sarvamNote: sarvamFallback
-      ? `${languageCode} uses Hindi voice via Sarvam — add BHASHINI_API_KEY for native voice`
+      ? `${languageCode} uses Hindi voice via Sarvam. Add BHASHINI_API_KEY for native voice`
       : null,
   };
 }

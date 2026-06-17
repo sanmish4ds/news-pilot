@@ -67,7 +67,7 @@ export async function fetchSpeechAudio(
 
   const blob = await res.blob();
   if (blob.size < 200) {
-    throw new Error("Audio file too small — generation may have failed");
+    throw new Error("Audio file too small. Generation may have failed");
   }
   return blob;
 }

@@ -30,7 +30,7 @@ ${specific}
 
 Return JSON with:
 1. "news": array of { id, rank, headline, summary, source } — headline/summary in ${lang.name}
-2. "ui": { title, subtitle, chooseLanguage, playBulletin, listenAllStories, listenStory, radioMode, storiesMode, pause, stop, refresh, onAir, preparingBulletin, loadingNews, preparingNews, voiceNatural, voiceBrowser, voiceNotReady, nowPlaying, readyToPlay, storyLabel }
+2. "ui": { title, subtitle, chooseLanguage, playBulletin, listenAllStories, listenStory, radioMode, storiesMode, pause, stop, refresh, onAir, preparingBulletin, loadingNews, preparingNews, voiceNatural, voiceBrowser, voiceNotReady, nowPlaying, readyToPlay, storyLabel } (no em dashes in any string)
 3. "bulletinScript": ONE continuous radio bulletin (max 2000 chars) for text-to-speech:
    - Open: greet + "News Pilot Radio" + date ${dateLabel}
    - ${newsCount} stories with smooth transitions (not robotic numbering every time)

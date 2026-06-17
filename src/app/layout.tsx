@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "News Pilot — Listen to Today's Top 10 India News",
+  title: "News Pilot | Listen to Today's Top 10 India News",
   description:
     "Top 10 news of the day from India. Listen in all 22 constitutional languages. Made for easy listening.",
 };

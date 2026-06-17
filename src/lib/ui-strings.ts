@@ -44,7 +44,7 @@ export function englishUi(introCount = 10): { ui: UiStrings; introText: string }
       voiceBrowser: "Using browser voice",
       voiceNotReady: "Voice not ready. Add SARVAM_API_KEY to .env.local",
       nowPlaying: "Ready",
-      readyToPlay: "Audio ready — tap play",
+      readyToPlay: "Audio ready · tap play",
       storyLabel: "Story",
     },
     introText: `Here are today's top ${introCount} news from India.`,
