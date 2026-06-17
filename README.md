@@ -1,4 +1,4 @@
-# News Pilot — Listen to Today's Top 10 India News
+# The news Noice : Today's Top 10 India News without any Noice
 
 Audio-first news for everyone — especially listeners aged 50+ who prefer to **hear** the news rather than read it.
 

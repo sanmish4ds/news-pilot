@@ -25,7 +25,7 @@ export interface UiStrings {
 export function englishUi(introCount = 10): { ui: UiStrings; introText: string } {
   return {
     ui: {
-      title: "Today's Top 10 News",
+      title: "The News Noice: Today's Top 10 India News",
       subtitle: "India · Listen in your language",
       chooseLanguage: "Choose your language",
       playBulletin: "Play Full Bulletin",

@@ -30,9 +30,9 @@ ${specific}
 
 Return JSON with:
 1. "news": array of { id, rank, headline, summary, source } — headline/summary in ${lang.name}
-2. "ui": { title, subtitle, chooseLanguage, playBulletin, listenAllStories, listenStory, radioMode, storiesMode, pause, stop, refresh, onAir, preparingBulletin, loadingNews, preparingNews, voiceNatural, voiceBrowser, voiceNotReady, nowPlaying, readyToPlay, storyLabel } (no em dashes in any string)
+2. "ui": { title, subtitle, chooseLanguage, playBulletin, listenAllStories, listenStory, radioMode, storiesMode, pause, stop, refresh, onAir, preparingBulletin, loadingNews, preparingNews, voiceNatural, voiceBrowser, voiceNotReady, nowPlaying, readyToPlay, storyLabel } — title must be "The News Noice: " plus localized "Today's Top 10 India News" (brand name The News Noice appears only once, no em dashes)
 3. "bulletinScript": ONE continuous radio bulletin (max 2000 chars) for text-to-speech:
-   - Open: greet + "News Pilot Radio" + date ${dateLabel}
+   - Open: greet + "The News Noice" + date ${dateLabel}
    - ${newsCount} stories with smooth transitions (not robotic numbering every time)
    - Close: warm sign-off
    - Short sentences, natural spoken ${lang.name}, flowing like ALL INDIA RADIO

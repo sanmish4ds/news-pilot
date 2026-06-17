@@ -17,7 +17,7 @@ export function stitchBulletinFallback(
   const n = stories.length;
   if (lang.code === "en") {
     const lines = [
-      `Good evening. This is News Pilot Radio.`,
+      `Good evening. This is The News Noice.`,
       `Here are the top ${n} news from India for ${dateLabel}.`,
       ``,
     ];
@@ -26,13 +26,13 @@ export function stitchBulletinFallback(
       if (i < stories.length - 1) lines.push(`Next.`);
       lines.push(``);
     });
-    lines.push(`That wraps today's bulletin. Thank you for listening to News Pilot Radio.`);
+    lines.push(`That wraps today's bulletin. Thank you for listening to The News Noice.`);
     return lines.join("\n");
   }
 
   if (lang.code === "hi") {
     const lines = [
-      `नमस्कार। आप सुन रहे हैं न्यूज़ पायलट रेडियो।`,
+      `नमस्कार। आप सुन रहे हैं The News Noice।`,
       `${dateLabel} के भारत की ${n} बड़ी खबरें।`,
       ``,
     ];
@@ -41,13 +41,13 @@ export function stitchBulletinFallback(
       if (i < stories.length - 1) lines.push(`अगली खबर।`);
       lines.push(``);
     });
-    lines.push(`आज की खबरें यहीं समाप्त। न्यूज़ पायलट रेडियो सुनने के लिए धन्यवाद।`);
+    lines.push(`आज की खबरें यहीं समाप्त। The News Noice सुनने के लिए धन्यवाद।`);
     return lines.join("\n");
   }
 
   if (lang.code === "mai") {
     const lines = [
-      `प्रणाम। अहाँ सुनि रहल छी न्यूज़ पायलट रेडियो।`,
+      `प्रणाम। अहाँ सुनि रहल छी The News Noice।`,
       `${dateLabel}क भारतक ${n} बड़ खबर।`,
       ``,
     ];
@@ -62,7 +62,7 @@ export function stitchBulletinFallback(
 
   // Generic template for other languages — GPT will override
   const lines = [
-    `News Pilot Radio.`,
+    `The News Noice.`,
     `Top ${n} news from India.`,
     ``,
   ];
@@ -94,7 +94,7 @@ Stories: ${storyCount}
 ${maiNote}
 
 Write like ALL INDIA RADIO / FM gold bulletin — smooth, professional, for elderly listeners:
-1. OPENING (2 sentences): greet, station name "News Pilot Radio", today's date, "top ${storyCount} news from India"
+1. OPENING (2 sentences): greet, station name "The News Noice", today's date, "top ${storyCount} news from India"
 2. BODY: each story flows naturally with transitions — NO awkward "news number" repetition every time. Use varied bridges:
    - "First," / "पहली खबर," / "खबर सङ्ख्या एक,"
    - "Moving on," / "अगली खबर," / "अगिला खबर,"

@@ -8,11 +8,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "The News Noice",
+  title: "The News Noice: Today's Top 10 India News",
   description:
     "Listen to today's top 10 news from India in all 22 constitutional languages. Made for easy listening.",
   openGraph: {
-    title: "The News Noice",
+    title: "The News Noice: Today's Top 10 India News",
     description:
       "Listen to today's top 10 news from India in all 22 constitutional languages.",
     siteName: "The News Noice",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "The News Noice",
+    title: "The News Noice: Today's Top 10 India News",
     description:
       "Listen to today's top 10 news from India in all 22 constitutional languages.",
   },

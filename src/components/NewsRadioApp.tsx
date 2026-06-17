@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Radio,
   Square,
   Play,
   Pause,
@@ -468,12 +467,6 @@ export function NewsRadioApp() {
       <header className="relative overflow-hidden border-b border-white/5">
         <div className="absolute inset-0 bg-gradient-to-br from-teal-950/80 via-[#0a0f1a] to-indigo-950/60" />
         <div className="relative max-w-4xl mx-auto px-4 py-8 sm:px-8 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/20 mb-4">
-            <Radio className="w-4 h-4 text-teal-400" />
-            <span className="text-xs font-semibold text-teal-300 tracking-widest uppercase">
-              The News Noice
-            </span>
-          </div>
           <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight leading-tight">
             {ui.title}
           </h1>
