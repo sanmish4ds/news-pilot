@@ -7,14 +7,21 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+const SITE_URL = "https://thenewsnoice.netlify.app";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "The News Noice: Today's Top 10 India News",
   description:
-    "Listen to today's top 10 news from India in all 22 constitutional languages. Made for easy listening.",
+    "Listen to today's top 10 India news in all 22 constitutional languages. Audio news made simple.",
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
     title: "The News Noice: Today's Top 10 India News",
     description:
-      "Listen to today's top 10 news from India in all 22 constitutional languages.",
+      "Listen to today's top 10 India news in all 22 constitutional languages.",
+    url: SITE_URL,
     siteName: "The News Noice",
     type: "website",
   },
@@ -22,7 +29,7 @@ export const metadata: Metadata = {
     card: "summary",
     title: "The News Noice: Today's Top 10 India News",
     description:
-      "Listen to today's top 10 news from India in all 22 constitutional languages.",
+      "Listen to today's top 10 India news in all 22 constitutional languages.",
   },
 };
 
