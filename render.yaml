@@ -1,0 +1,26 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: news-pilot
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: SARVAM_SPEAKER
+        value: shubh
+      - key: SARVAM_PACE
+        value: "0.92"
+      - key: BHASHINI_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
