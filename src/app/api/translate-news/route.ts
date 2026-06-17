@@ -5,6 +5,7 @@ import { buildTranslationSystemPrompt } from "@/lib/translation-prompts";
 import { englishUi, UiStrings } from "@/lib/ui-strings";
 import { stitchBulletinFallback } from "@/lib/radio-bulletin";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 interface NewsInput {

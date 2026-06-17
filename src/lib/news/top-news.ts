@@ -1,5 +1,4 @@
 import Parser from "rss-parser";
-import { extractDomain } from "./scraper";
 
 const parser = new Parser();
 
@@ -11,6 +10,14 @@ export interface TopNewsItem {
   url: string;
   snippet: string;
   publishedAt?: string;
+}
+
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "News";
+  }
 }
 
 function parseGoogleTitle(raw: string): { title: string; source: string } {

@@ -22,6 +22,7 @@ import {
   waitForAudioReady,
 } from "@/lib/audio-player";
 import { DEFAULT_UI, UiStrings } from "@/lib/ui-strings";
+import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 
 interface RawNewsItem {
@@ -381,9 +382,7 @@ export function NewsRadioApp() {
     clearCache();
     prefetchAbortRef.current?.abort();
     try {
-      const res = await fetch("/api/top-news");
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      const data = await fetchJson<{ news: RawNewsItem[]; date: string }>("/api/top-news");
       setRawNews(data.news);
       setDate(data.date);
     } catch (err: unknown) {
@@ -402,13 +401,15 @@ export function NewsRadioApp() {
       clearCache();
       prefetchAbortRef.current?.abort();
       try {
-        const res = await fetch("/api/translate-news", {
+        const data = await fetchJson<{
+          news: TranslatedNewsItem[];
+          ui?: UiStrings;
+          bulletinScript?: string;
+        }>("/api/translate-news", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ news: items, languageCode: lang.code, dateLabel: dateStr }),
         });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
         setNews(data.news);
         if (data.ui) setUi(data.ui);
         if (data.bulletinScript) setBulletinScript(data.bulletinScript);
@@ -427,11 +428,17 @@ export function NewsRadioApp() {
   }, [loadNews]);
 
   useEffect(() => {
-    fetch(`/api/tts-status?lang=${language.code}`)
-      .then((r) => r.json())
+    fetchJson<{
+      sarvam?: boolean;
+      enabled?: boolean;
+      bhashini?: boolean;
+      elevenlabs?: boolean;
+      provider?: string;
+      sarvamFallback?: boolean;
+    }>(`/api/tts-status?lang=${language.code}`)
       .then((d) => {
         setSarvamReady(!!d.sarvam);
-        setServerTtsReady(!!d.enabled && (d.sarvam || d.bhashini || d.elevenlabs));
+        setServerTtsReady(!!(d.enabled && (d.sarvam || d.bhashini || d.elevenlabs)));
         setTtsProvider(d.provider || "");
         setSarvamFallback(!!d.sarvamFallback);
       })
