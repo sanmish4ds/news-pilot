@@ -3,7 +3,18 @@ import { getOpenAIClient, SYSTEM_PROMPTS } from "@/lib/openai";
 import { scrapeArticle } from "@/lib/news/scraper";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 25;
+
+const SCRAPE_BUDGET_MS = 6000;
+
+async function scrapeWithBudget(url: string): Promise<string> {
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SCRAPE_BUDGET_MS));
+  const result = await Promise.race([
+    scrapeArticle(url).catch(() => null),
+    timeout,
+  ]);
+  return result?.content?.slice(0, 8000) || "";
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,17 +29,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Headline is required." }, { status: 400 });
     }
 
-    let articleContent = "";
-    if (url?.trim()) {
-      try {
-        const scraped = await scrapeArticle(url.trim());
-        if (scraped.content) {
-          articleContent = scraped.content.slice(0, 8000);
-        }
-      } catch {
-        // fall back to headline/snippet only
-      }
-    }
+    const articleContent = url?.trim() ? await scrapeWithBudget(url.trim()) : "";
 
     const client = getOpenAIClient();
 
