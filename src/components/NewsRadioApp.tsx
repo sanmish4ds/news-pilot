@@ -686,16 +686,6 @@ export function NewsRadioApp() {
           {!canListen && (
             <p className="text-center text-amber-400/90 text-sm mt-4">{ui.voiceNotReady}</p>
           )}
-          {canListen && serverTtsReady && (
-            <p className="text-center text-xs text-slate-500 mt-3 flex items-center justify-center gap-1.5">
-              <Volume2 className="w-3.5 h-3.5" />
-              {ttsProvider === "sarvam"
-                ? sarvamReady
-                  ? ui.voiceNatural
-                  : ui.voiceNatural
-                : ui.voiceNatural}
-            </p>
-          )}
           {sarvamFallback && language.code === "mai" && (
             <p className="text-center text-amber-400/80 text-xs mt-2">
               Maithili text · Hindi voice via Sarvam. Add BHASHINI_API_KEY for native Maithili.

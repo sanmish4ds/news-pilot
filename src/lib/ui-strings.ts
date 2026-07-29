@@ -14,7 +14,6 @@ export interface UiStrings {
   preparingBulletin: string;
   loadingNews: string;
   preparingNews: string;
-  voiceNatural: string;
   voiceBrowser: string;
   voiceNotReady: string;
   nowPlaying: string;
@@ -40,7 +39,6 @@ export function englishUi(introCount = 10): { ui: UiStrings; introText: string }
       preparingBulletin: "Preparing audio…",
       loadingNews: "Loading today's news…",
       preparingNews: "Preparing news…",
-      voiceNatural: "Powered by Sarvam AI · Natural Indian voice",
       voiceBrowser: "Using browser voice",
       voiceNotReady: "Voice not ready. Add SARVAM_API_KEY to .env.local",
       nowPlaying: "Ready",
