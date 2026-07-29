@@ -11,6 +11,7 @@ import {
   Headphones,
   ListMusic,
   Volume2,
+  X,
 } from "lucide-react";
 import { ALL_LANGUAGES, ConstitutionalLanguage } from "@/lib/languages";
 import {
@@ -79,6 +80,10 @@ export function NewsRadioApp() {
   const [currentTime, setCurrentTime] = useState(0);
   const [nowPlayingLabel, setNowPlayingLabel] = useState("");
   const [error, setError] = useState("");
+  const [summaryItem, setSummaryItem] = useState<TranslatedNewsItem | null>(null);
+  const [summaryText, setSummaryText] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState("");
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -349,6 +354,40 @@ export function NewsRadioApp() {
     },
     [canListen, fetchAndPlay, stopRadio, ui.storyLabel, ui.voiceNotReady]
   );
+
+  const openSummary = useCallback(
+    async (item: TranslatedNewsItem) => {
+      setSummaryItem(item);
+      setSummaryText("");
+      setSummaryError("");
+      setSummaryLoading(true);
+      try {
+        const rawMatch = rawNews.find((raw) => raw.id === item.id);
+        const data = await fetchJson<{ summary: string }>("/api/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            headline: item.headline,
+            snippet: item.summary,
+            source: item.source,
+            url: rawMatch?.url,
+          }),
+        });
+        setSummaryText(data.summary);
+      } catch (err) {
+        setSummaryError(err instanceof Error ? err.message : "Could not load summary.");
+      } finally {
+        setSummaryLoading(false);
+      }
+    },
+    [rawNews]
+  );
+
+  const closeSummary = useCallback(() => {
+    setSummaryItem(null);
+    setSummaryText("");
+    setSummaryError("");
+  }, []);
 
   const playAllStories = useCallback(async () => {
     if (!news.length || !canListen) {
@@ -703,7 +742,13 @@ export function NewsRadioApp() {
                       {item.rank}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-bold text-white leading-snug">{item.headline}</h3>
+                      <button
+                        type="button"
+                        onClick={() => openSummary(item)}
+                        className="text-left text-lg font-bold text-white leading-snug hover:text-teal-300 transition-colors"
+                      >
+                        {item.headline}
+                      </button>
                       <p className="text-base text-slate-400 mt-2 leading-relaxed">{item.summary}</p>
                       <p className="text-xs text-slate-600 mt-2">{item.source}</p>
                     </div>
@@ -735,6 +780,50 @@ export function NewsRadioApp() {
           </section>
         )}
       </main>
+
+      {summaryItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={closeSummary}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f1523] p-5 sm:p-6 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <h3 className="text-lg font-bold text-white leading-snug">{summaryItem.headline}</h3>
+              <button
+                type="button"
+                onClick={closeSummary}
+                aria-label="Close"
+                className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-slate-300 hover:bg-white/20"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600 mt-1">{summaryItem.source}</p>
+
+            <div className="mt-4">
+              {summaryLoading && (
+                <div className="flex items-center gap-3 py-6 text-slate-400">
+                  <Loader2 className="w-5 h-5 animate-spin text-teal-400" />
+                  <span>Summarizing…</span>
+                </div>
+              )}
+              {!summaryLoading && summaryError && (
+                <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                  {summaryError}
+                </p>
+              )}
+              {!summaryLoading && !summaryError && summaryText && (
+                <p className="text-base text-slate-300 leading-relaxed whitespace-pre-line">
+                  {summaryText}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
