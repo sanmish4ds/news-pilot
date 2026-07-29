@@ -63,6 +63,8 @@ const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
 /** Languages with a TTS voice wired up (English via ElevenLabs, Hindi/Maithili via Sarvam) — listening controls show only for these. */
 const LISTENING_ENABLED_CODES = new Set(["en", "hi", "mai"]);
 
+const SUMMARY_PLAYBACK_LABEL = "Summary";
+
 function readSessionCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
   try {
@@ -105,9 +107,17 @@ export function NewsRadioApp() {
   const [date, setDate] = useState("");
   const [rawNews, setRawNews] = useState<RawNewsItem[]>([]);
   const [news, setNews] = useState<TranslatedNewsItem[]>([]);
-  const [bulletinScript, setBulletinScript] = useState("");
+  // Paired together in one state update so a render can never see a script
+  // from one language matched with a different, already-switched-to
+  // language code (that mismatch was causing bogus TTS prefetch calls with
+  // the wrong text/voice combination when switching languages quickly).
+  const [bulletin, setBulletin] = useState<{ script: string; langCode: string }>({
+    script: "",
+    langCode: "",
+  });
   const [ui, setUi] = useState<UiStrings>(DEFAULT_UI);
   const [language, setLanguage] = useState<ConstitutionalLanguage>(ALL_LANGUAGES[0]);
+  const bulletinScript = bulletin.langCode === language.code ? bulletin.script : "";
   const [listenMode, setListenMode] = useState<ListenMode>("bulletin");
   const [loadingNews, setLoadingNews] = useState(true);
   const [loadingLang, setLoadingLang] = useState(false);
@@ -130,12 +140,14 @@ export function NewsRadioApp() {
   const [summaryText, setSummaryText] = useState("");
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
+  const [summaryAudioLoading, setSummaryAudioLoading] = useState(false);
   const [visibleCount, setVisibleCount] = useState(10);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
-  const cachedBlobRef = useRef<Blob | null>(null);
-  const cachedScriptRef = useRef("");
+  // Keyed by language code so switching languages and back reuses previously
+  // synthesized bulletin audio instead of re-fetching it from the TTS API.
+  const audioCacheRef = useRef<Map<string, { blob: Blob; script: string }>>(new Map());
   const prefetchAbortRef = useRef<AbortController | null>(null);
   const playAbortRef = useRef<AbortController | null>(null);
   const queueRef = useRef<{ id: string; text: string; label: string }[]>([]);
@@ -145,13 +157,17 @@ export function NewsRadioApp() {
     Map<string, { news: TranslatedNewsItem[]; ui?: UiStrings; bulletinScript?: string }>
   >(new Map());
   const summaryCacheRef = useRef<Map<string, string>>(new Map());
+  // Bumped every time playback is stopped/superseded — any in-flight async
+  // playback op checks this after each `await` and bails out silently if a
+  // newer op has since started (e.g. the user switched language mid-fetch),
+  // preventing two audio streams from ever overlapping.
+  const playGenerationRef = useRef(0);
 
   const canListen = serverTtsReady || browserSpeechReady;
   const isOnAir = radioState === "playing" || radioState === "paused";
 
+  // Resets transient playback UI (not the persistent per-language audio cache).
   const clearCache = useCallback(() => {
-    cachedBlobRef.current = null;
-    cachedScriptRef.current = "";
     setAudioPrefetched(false);
     if (blobUrlRef.current) {
       URL.revokeObjectURL(blobUrlRef.current);
@@ -167,6 +183,7 @@ export function NewsRadioApp() {
   }, []);
 
   const stopPlayback = useCallback(() => {
+    playGenerationRef.current += 1;
     if (playAbortRef.current) {
       playAbortRef.current.abort();
       playAbortRef.current = null;
@@ -192,7 +209,7 @@ export function NewsRadioApp() {
   }, [stopPlayback]);
 
   const playBlob = useCallback(
-    async (blob: Blob, label: string, onEnded?: () => void) => {
+    async (blob: Blob, label: string, generation: number, onEnded?: () => void) => {
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
       const url = URL.createObjectURL(blob);
       blobUrlRef.current = url;
@@ -200,7 +217,6 @@ export function NewsRadioApp() {
       const audio = new Audio(url);
       audio.setAttribute("playsinline", "true");
       audio.preload = "auto";
-      audioRef.current = audio;
 
       audio.onloadedmetadata = () => setDuration(audio.duration || 0);
       audio.ontimeupdate = () => {
@@ -208,18 +224,33 @@ export function NewsRadioApp() {
         if (audio.duration) setProgress((audio.currentTime / audio.duration) * 100);
       };
       audio.onended = () => {
+        if (playGenerationRef.current !== generation) return;
         if (onEnded) onEnded();
         else setRadioState("idle");
       };
       audio.onerror = () => {
+        if (playGenerationRef.current !== generation) return;
         setError("Playback failed. Tap play again.");
         setRadioState("idle");
         stopQueue();
       };
 
-      setNowPlayingLabel(label);
       await waitForAudioReady(audio);
+      // A newer playback action (e.g. the user switched language or hit play
+      // elsewhere) superseded this one while we were awaiting — stop this
+      // audio before it ever starts, instead of letting two streams overlap.
+      if (playGenerationRef.current !== generation) {
+        audio.pause();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      audioRef.current = audio;
+      setNowPlayingLabel(label);
       await audio.play();
+      if (playGenerationRef.current !== generation) {
+        audio.pause();
+        return;
+      }
       setRadioState("playing");
     },
     [stopQueue]
@@ -228,6 +259,7 @@ export function NewsRadioApp() {
   const fetchAndPlay = useCallback(
     async (text: string, label: string, onEnded?: () => void) => {
       stopPlayback();
+      const generation = playGenerationRef.current;
       setRadioState("loading");
       setError("");
 
@@ -239,22 +271,26 @@ export function NewsRadioApp() {
             language.code,
             playAbortRef.current.signal
           );
-          await playBlob(blob, label, onEnded);
+          if (playGenerationRef.current !== generation) return;
+          await playBlob(blob, label, generation, onEnded);
         } else {
           setNowPlayingLabel(label);
           setRadioState("playing");
           await speakWithBrowser(text, language.code);
+          if (playGenerationRef.current !== generation) return;
           if (onEnded) onEnded();
           else setRadioState("idle");
         }
       } catch (err: unknown) {
         if ((err as Error).name === "AbortError") return;
+        if (playGenerationRef.current !== generation) return;
 
         if (serverTtsReady && browserSpeechReady) {
           try {
             setNowPlayingLabel(label);
             setRadioState("playing");
             await speakWithBrowser(text, language.code);
+            if (playGenerationRef.current !== generation) return;
             if (onEnded) onEnded();
             else setRadioState("idle");
             return;
@@ -295,7 +331,8 @@ export function NewsRadioApp() {
   const prefetchAudio = useCallback(
     async (script: string, langCode: string) => {
       if (!script || !serverTtsReady) return;
-      if (cachedScriptRef.current === script && cachedBlobRef.current) {
+      const cached = audioCacheRef.current.get(langCode);
+      if (cached && cached.script === script) {
         setAudioPrefetched(true);
         return;
       }
@@ -309,8 +346,7 @@ export function NewsRadioApp() {
       try {
         const blob = await fetchSpeechAudio(script, langCode, ac.signal);
         if (ac.signal.aborted) return;
-        cachedBlobRef.current = blob;
-        cachedScriptRef.current = script;
+        audioCacheRef.current.set(langCode, { blob, script });
         setAudioPrefetched(true);
       } catch {
         if (!ac.signal.aborted) setAudioPrefetched(false);
@@ -346,26 +382,27 @@ export function NewsRadioApp() {
 
     if (serverTtsReady) {
       stopPlayback();
+      const generation = playGenerationRef.current;
       setRadioState("loading");
       setError("");
-      setNowPlayingLabel(ui.playBulletin);
 
       try {
-        let blob = cachedBlobRef.current;
-        if (!blob || cachedScriptRef.current !== bulletinScript) {
+        const cached = audioCacheRef.current.get(language.code);
+        let blob = cached?.script === bulletinScript ? cached.blob : null;
+        if (!blob) {
           playAbortRef.current = new AbortController();
           blob = await fetchSpeechAudio(
             bulletinScript,
             language.code,
             playAbortRef.current.signal
           );
-          cachedBlobRef.current = blob;
-          cachedScriptRef.current = bulletinScript;
+          if (playGenerationRef.current !== generation) return;
+          audioCacheRef.current.set(language.code, { blob, script: bulletinScript });
           setAudioPrefetched(true);
         }
-        await playBlob(blob, ui.playBulletin);
+        await playBlob(blob, ui.playBulletin, generation);
       } catch (err: unknown) {
-        if ((err as Error).name !== "AbortError") {
+        if ((err as Error).name !== "AbortError" && playGenerationRef.current === generation) {
           setError(err instanceof Error ? err.message : ui.voiceNotReady);
           setRadioState("idle");
         }
@@ -461,6 +498,19 @@ export function NewsRadioApp() {
     setSummaryError("");
   }, []);
 
+  const isSummaryAudioActive = isOnAir && nowPlayingLabel === SUMMARY_PLAYBACK_LABEL;
+
+  const playSummaryAudio = useCallback(async () => {
+    if (!canListen || !summaryText) return;
+    stopRadio();
+    setSummaryAudioLoading(true);
+    try {
+      await fetchAndPlay(summaryText, SUMMARY_PLAYBACK_LABEL);
+    } finally {
+      setSummaryAudioLoading(false);
+    }
+  }, [canListen, summaryText, stopRadio, fetchAndPlay]);
+
   const playAllStories = useCallback(async () => {
     if (!news.length || !canListen) {
       setError(news.length ? ui.voiceNotReady : "No stories yet.");
@@ -527,7 +577,7 @@ export function NewsRadioApp() {
         clearCache();
         setNews(cached.news);
         if (cached.ui) setUi(cached.ui);
-        if (cached.bulletinScript) setBulletinScript(cached.bulletinScript);
+        setBulletin({ script: cached.bulletinScript || "", langCode: lang.code });
         return;
       }
 
@@ -543,7 +593,7 @@ export function NewsRadioApp() {
         clearCache();
         setNews(sessionCached.news);
         if (sessionCached.ui) setUi(sessionCached.ui);
-        if (sessionCached.bulletinScript) setBulletinScript(sessionCached.bulletinScript);
+        setBulletin({ script: sessionCached.bulletinScript || "", langCode: lang.code });
         return;
       }
 
@@ -566,7 +616,7 @@ export function NewsRadioApp() {
         writeSessionCache(sessionKey, data);
         setNews(data.news);
         if (data.ui) setUi(data.ui);
-        if (data.bulletinScript) setBulletinScript(data.bulletinScript);
+        setBulletin({ script: data.bulletinScript || "", langCode: lang.code });
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : ui.preparingNews);
       } finally {
@@ -659,7 +709,7 @@ export function NewsRadioApp() {
               <button
                 key={lang.code}
                 onClick={() => setLanguage(lang)}
-                disabled={busy || isOnAir}
+                disabled={busy}
                 className={cn(
                   "flex-shrink-0 snap-start min-w-[88px] rounded-xl border px-3 py-3 text-center transition-all",
                   language.code === lang.code
@@ -937,6 +987,22 @@ export function NewsRadioApp() {
               )}
               {!summaryLoading && !summaryError && summaryText && (
                 <>
+                  {LISTENING_ENABLED_CODES.has(language.code) && canListen && (
+                    <button
+                      type="button"
+                      onClick={() => (isSummaryAudioActive ? stopRadio() : playSummaryAudio())}
+                      className="inline-flex items-center gap-2 mb-4 px-4 py-2 rounded-xl bg-white/10 text-teal-300 hover:bg-teal-500/20 text-sm font-semibold"
+                    >
+                      {summaryAudioLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : isSummaryAudioActive ? (
+                        <Pause className="w-4 h-4 fill-current" />
+                      ) : (
+                        <Play className="w-4 h-4 fill-current" />
+                      )}
+                      {isSummaryAudioActive ? "Stop" : "Listen"}
+                    </button>
+                  )}
                   <p className="text-base text-slate-300 leading-relaxed whitespace-pre-line">
                     {summaryText}
                   </p>
