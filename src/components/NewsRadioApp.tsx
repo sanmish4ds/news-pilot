@@ -371,6 +371,8 @@ export function NewsRadioApp() {
             snippet: item.summary,
             source: item.source,
             url: rawMatch?.url,
+            languageName: language.name,
+            languageNative: language.native,
           }),
         });
         setSummaryText(data.summary);
@@ -380,7 +382,7 @@ export function NewsRadioApp() {
         setSummaryLoading(false);
       }
     },
-    [rawNews]
+    [rawNews, language.name, language.native]
   );
 
   const closeSummary = useCallback(() => {

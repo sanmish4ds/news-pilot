@@ -22,11 +22,13 @@ async function scrapeWithBudget(url: string): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { headline, snippet, source, url } = (await req.json()) as {
+    const { headline, snippet, source, url, languageName, languageNative } = (await req.json()) as {
       headline?: string;
       snippet?: string;
       source?: string;
       url?: string;
+      languageName?: string;
+      languageNative?: string;
     };
 
     if (!headline?.trim()) {
@@ -37,11 +39,17 @@ export async function POST(req: NextRequest) {
 
     const client = getOpenAIClient();
 
+    const targetLanguage =
+      languageName && languageName !== "English"
+        ? `${languageName}${languageNative ? ` (${languageNative})` : ""}`
+        : "";
+
     const userMessage = `
 HEADLINE: ${headline}
 SOURCE: ${source || "Unknown"}
 ${snippet ? `SNIPPET: ${snippet}\n` : ""}
 ${articleContent ? `ARTICLE TEXT:\n${articleContent}` : "No full article text available — summarize based on the headline and snippet only."}
+${targetLanguage ? `\nWrite the summary entirely in ${targetLanguage}, using its native script. Do not use English.` : ""}
     `.trim();
 
     const response = await client.chat.completions.create({
