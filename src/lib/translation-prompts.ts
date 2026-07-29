@@ -14,29 +14,22 @@ const LANGUAGE_RULES: Record<string, string> = {
   ur: `Urdu Perso-Arabic script.`,
 };
 
-export function getTranslationModel(languageCode: string): string {
-  return process.env.OPENAI_MODEL || "gpt-4o-mini";
+export function getTranslationModel(): string {
+  return "claude-sonnet-4-6";
 }
 
-export function buildTranslationSystemPrompt(
-  lang: ConstitutionalLanguage,
-  newsCount: number,
-  dateLabel: string
-): string {
+/** Smaller/faster prompt used when translating a chunk of the news array in parallel. */
+export function buildNewsChunkPrompt(lang: ConstitutionalLanguage): string {
   const specific = LANGUAGE_RULES[lang.code] || "";
-
-  return `Translate Indian news for elderly radio listeners into ${lang.name} (${lang.native}).
+  return `Translate Indian news headlines for elderly radio listeners into ${lang.name} (${lang.native}).
 ${specific}
 
-Return JSON with:
-1. "news": array of { id, rank, headline, summary, source } — headline/summary in ${lang.name}
-2. "ui": { title, subtitle, chooseLanguage, playBulletin, listenAllStories, listenStory, radioMode, storiesMode, pause, stop, refresh, onAir, preparingBulletin, loadingNews, preparingNews, voiceBrowser, voiceNotReady, nowPlaying, readyToPlay, storyLabel } — title must be "The News Noice: " plus localized "Today's Top 10 India News" (brand name The News Noice appears only once, no em dashes)
-3. "bulletinScript": ONE continuous radio bulletin (max 2000 chars) for text-to-speech:
-   - Open: greet + "The News Noice" + date ${dateLabel}
-   - ${newsCount} stories with smooth transitions (not robotic numbering every time)
-   - Close: warm sign-off
-   - Short sentences, natural spoken ${lang.name}, flowing like ALL INDIA RADIO
-   - NO markdown, NO JSON inside bulletinScript
+Return ONLY raw JSON, no markdown fence, no commentary: { "news": array of { id, rank, headline, summary, source } — headline/summary translated into ${lang.name} }.`;
+}
 
-Keep total response compact. bulletinScript is the most important field for audio.`;
+/** Used when the bulletin comes from a local template — only "ui" strings are needed from the model. */
+export function buildUiOnlyPrompt(lang: ConstitutionalLanguage, newsCount: number): string {
+  return `Translate these UI labels for a news radio app into ${lang.name} (${lang.native}), for elderly listeners.
+
+Return ONLY raw JSON, no markdown fence, no commentary: { "ui": { title, subtitle, chooseLanguage, playBulletin, listenAllStories, listenStory, radioMode, storiesMode, pause, stop, refresh, onAir, preparingBulletin, loadingNews, preparingNews, voiceBrowser, voiceNotReady, nowPlaying, readyToPlay, storyLabel } }. title must be "The News Noice: " plus localized "Today's Top ${newsCount} India News" (brand name The News Noice appears only once, no em dashes).`;
 }

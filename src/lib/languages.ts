@@ -39,7 +39,44 @@ export const ENGLISH_OPTION: ConstitutionalLanguage = {
   iso: "en",
 };
 
-export const ALL_LANGUAGES = [ENGLISH_OPTION, ...CONSTITUTIONAL_LANGUAGES];
+/**
+ * Approximate rank by number of speakers in India (2011 Census mother-tongue
+ * figures), used to order the language picker after the fixed English/Hindi/
+ * Maithili head. Lower number = more speakers = appears earlier.
+ */
+const SPEAKER_RANK: Record<string, number> = {
+  bn: 1, // Bengali ~97M
+  mr: 2, // Marathi ~83M
+  te: 3, // Telugu ~81M
+  ta: 4, // Tamil ~69M
+  gu: 5, // Gujarati ~55M
+  ur: 6, // Urdu ~50M
+  kn: 7, // Kannada ~43M
+  or: 8, // Odia ~37M
+  ml: 9, // Malayalam ~34M
+  pa: 10, // Punjabi ~33M
+  as: 11, // Assamese ~15M
+  sat: 12, // Santhali ~7.4M
+  ks: 13, // Kashmiri ~6.8M
+  ne: 14, // Nepali ~2.9M
+  doi: 15, // Dogri ~2.6M
+  kok: 16, // Konkani ~2.3M
+  sd: 17, // Sindhi ~2.7M
+  mni: 18, // Manipuri ~1.8M
+  brx: 19, // Bodo ~1.4M
+  sa: 20, // Sanskrit — negligible native speakers
+};
+
+const FEATURED_CODES = ["en", "hi", "mai"];
+
+export const ALL_LANGUAGES = [
+  ENGLISH_OPTION,
+  ...CONSTITUTIONAL_LANGUAGES.filter((l) => l.code === "hi"),
+  ...CONSTITUTIONAL_LANGUAGES.filter((l) => l.code === "mai"),
+  ...CONSTITUTIONAL_LANGUAGES.filter((l) => !FEATURED_CODES.includes(l.code)).sort(
+    (a, b) => (SPEAKER_RANK[a.code] ?? 99) - (SPEAKER_RANK[b.code] ?? 99)
+  ),
+];
 
 export function getLanguageByCode(code: string): ConstitutionalLanguage | undefined {
   return ALL_LANGUAGES.find((l) => l.code === code);

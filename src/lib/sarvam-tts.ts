@@ -8,8 +8,12 @@ const SARVAM_API_KEY = (
 
 const SARVAM_BASE = "https://api.sarvam.ai/text-to-speech";
 const SARVAM_MODEL = (process.env.SARVAM_MODEL || "bulbul:v3").trim();
-const SARVAM_SPEAKER = (process.env.SARVAM_SPEAKER || "shubh").trim();
-const SARVAM_PACE = Number(process.env.SARVAM_PACE || "0.92") || 0.92;
+// "priya" is a female Indian-English/Hindi voice, valid for the bulbul:v3
+// model this app uses — set SARVAM_SPEAKER to override with a different speaker.
+const SARVAM_SPEAKER = (process.env.SARVAM_SPEAKER || "priya").trim();
+// Slightly slower than natural conversational pace reads more like a
+// measured news bulletin; SARVAM_PACE env var still overrides this.
+const SARVAM_PACE = Number(process.env.SARVAM_PACE || "0.88") || 0.88;
 
 /** Direct Sarvam TTS language support (BCP-47) */
 export const SARVAM_DIRECT_CODES = new Set([

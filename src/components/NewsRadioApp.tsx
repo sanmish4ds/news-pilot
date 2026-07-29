@@ -7,11 +7,11 @@ import {
   Pause,
   Loader2,
   RefreshCw,
-  CheckCircle2,
   Headphones,
   ListMusic,
   Volume2,
   X,
+  ExternalLink,
 } from "lucide-react";
 import { ALL_LANGUAGES, ConstitutionalLanguage } from "@/lib/languages";
 import {
@@ -53,7 +53,52 @@ function formatTime(seconds: number): string {
 }
 
 function storySpeechText(item: TranslatedNewsItem, storyLabel: string): string {
-  return `${storyLabel} ${item.rank}. ${item.headline}. ${item.summary}`;
+  const hasDistinctSummary = item.summary && item.summary !== item.headline;
+  // Blank line between headline and summary reads as a natural pause.
+  return `${storyLabel} ${item.rank}. ${item.headline}.${hasDistinctSummary ? `\n\n${item.summary}` : ""}`;
+}
+
+const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
+
+/** Languages with a TTS voice wired up (English via ElevenLabs, Hindi/Maithili via Sarvam) — listening controls show only for these. */
+const LISTENING_ENABLED_CODES = new Set(["en", "hi", "mai"]);
+
+function readSessionCache<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { value: T; cachedAt: number };
+    if (Date.now() - parsed.cachedAt > SESSION_CACHE_TTL_MS) return null;
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCache<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ value, cachedAt: Date.now() }));
+  } catch {
+    // sessionStorage full/unavailable — skip silently
+  }
+}
+
+/** Clear cached translations/summaries — call whenever top-news actually refetches, since a
+ * fresh headline set invalidates them even if the date label happens to be unchanged. */
+function clearDerivedSessionCaches(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key && (key.startsWith("np:translation:") || key.startsWith("np:summary:"))) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export function NewsRadioApp() {
@@ -81,9 +126,11 @@ export function NewsRadioApp() {
   const [nowPlayingLabel, setNowPlayingLabel] = useState("");
   const [error, setError] = useState("");
   const [summaryItem, setSummaryItem] = useState<TranslatedNewsItem | null>(null);
+  const [summaryUrl, setSummaryUrl] = useState("");
   const [summaryText, setSummaryText] = useState("");
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
+  const [visibleCount, setVisibleCount] = useState(10);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -94,6 +141,10 @@ export function NewsRadioApp() {
   const queueRef = useRef<{ id: string; text: string; label: string }[]>([]);
   const queueIndexRef = useRef(0);
   const queueActiveRef = useRef(false);
+  const translationCacheRef = useRef<
+    Map<string, { news: TranslatedNewsItem[]; ui?: UiStrings; bulletinScript?: string }>
+  >(new Map());
+  const summaryCacheRef = useRef<Map<string, string>>(new Map());
 
   const canListen = serverTtsReady || browserSpeechReady;
   const isOnAir = radioState === "playing" || radioState === "paused";
@@ -360,9 +411,25 @@ export function NewsRadioApp() {
       setSummaryItem(item);
       setSummaryText("");
       setSummaryError("");
+      const rawMatch = rawNews.find((raw) => raw.id === item.id);
+      setSummaryUrl(rawMatch?.url || "");
+
+      const cacheKey = `${item.id}:${language.code}`;
+      const cached = summaryCacheRef.current.get(cacheKey);
+      if (cached) {
+        setSummaryText(cached);
+        return;
+      }
+      const sessionKey = `np:summary:${cacheKey}`;
+      const sessionCached = readSessionCache<string>(sessionKey);
+      if (sessionCached) {
+        summaryCacheRef.current.set(cacheKey, sessionCached);
+        setSummaryText(sessionCached);
+        return;
+      }
+
       setSummaryLoading(true);
       try {
-        const rawMatch = rawNews.find((raw) => raw.id === item.id);
         const data = await fetchJson<{ summary: string }>("/api/summarize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -375,6 +442,8 @@ export function NewsRadioApp() {
             languageNative: language.native,
           }),
         });
+        summaryCacheRef.current.set(cacheKey, data.summary);
+        writeSessionCache(sessionKey, data.summary);
         setSummaryText(data.summary);
       } catch (err) {
         setSummaryError(err instanceof Error ? err.message : "Could not load summary.");
@@ -382,11 +451,12 @@ export function NewsRadioApp() {
         setSummaryLoading(false);
       }
     },
-    [rawNews, language.name, language.native]
+    [rawNews, language.code, language.name, language.native]
   );
 
   const closeSummary = useCallback(() => {
     setSummaryItem(null);
+    setSummaryUrl("");
     setSummaryText("");
     setSummaryError("");
   }, []);
@@ -415,14 +485,29 @@ export function NewsRadioApp() {
     }
   }, [radioState]);
 
-  const loadNews = useCallback(async () => {
-    setLoadingNews(true);
+  const loadNews = useCallback(async (forceRefresh = false) => {
     setError("");
     stopRadio();
     clearCache();
     prefetchAbortRef.current?.abort();
+
+    if (!forceRefresh) {
+      const cachedTopNews = readSessionCache<{ news: RawNewsItem[]; date: string }>("np:topnews");
+      if (cachedTopNews) {
+        setRawNews(cachedTopNews.news);
+        setDate(cachedTopNews.date);
+        setLoadingNews(false);
+        return;
+      }
+    }
+
+    setLoadingNews(true);
     try {
       const data = await fetchJson<{ news: RawNewsItem[]; date: string }>("/api/top-news");
+      translationCacheRef.current.clear();
+      summaryCacheRef.current.clear();
+      clearDerivedSessionCaches();
+      writeSessionCache("np:topnews", data);
       setRawNews(data.news);
       setDate(data.date);
     } catch (err: unknown) {
@@ -435,6 +520,33 @@ export function NewsRadioApp() {
   const translateNews = useCallback(
     async (lang: ConstitutionalLanguage, items: RawNewsItem[], dateStr: string) => {
       if (!items.length) return;
+
+      const cached = translationCacheRef.current.get(lang.code);
+      if (cached) {
+        stopRadio();
+        clearCache();
+        setNews(cached.news);
+        if (cached.ui) setUi(cached.ui);
+        if (cached.bulletinScript) setBulletinScript(cached.bulletinScript);
+        return;
+      }
+
+      const sessionKey = `np:translation:${dateStr}:${lang.code}`;
+      const sessionCached = readSessionCache<{
+        news: TranslatedNewsItem[];
+        ui?: UiStrings;
+        bulletinScript?: string;
+      }>(sessionKey);
+      if (sessionCached) {
+        translationCacheRef.current.set(lang.code, sessionCached);
+        stopRadio();
+        clearCache();
+        setNews(sessionCached.news);
+        if (sessionCached.ui) setUi(sessionCached.ui);
+        if (sessionCached.bulletinScript) setBulletinScript(sessionCached.bulletinScript);
+        return;
+      }
+
       setLoadingLang(true);
       setError("");
       stopRadio();
@@ -450,6 +562,8 @@ export function NewsRadioApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ news: items, languageCode: lang.code, dateLabel: dateStr }),
         });
+        translationCacheRef.current.set(lang.code, data);
+        writeSessionCache(sessionKey, data);
         setNews(data.news);
         if (data.ui) setUi(data.ui);
         if (data.bulletinScript) setBulletinScript(data.bulletinScript);
@@ -493,14 +607,32 @@ export function NewsRadioApp() {
   }, [language, rawNews, date, translateNews]);
 
   useEffect(() => {
+    setVisibleCount(10);
+  }, [news]);
+
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((count) => Math.min(count + 10, news.length));
+        }
+      },
+      { rootMargin: "400px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [news.length]);
+
+  useEffect(() => {
     if (bulletinScript && serverTtsReady && !loadingLang && listenMode === "bulletin") {
       prefetchAudio(bulletinScript, language.code);
     }
   }, [bulletinScript, serverTtsReady, loadingLang, language.code, listenMode, prefetchAudio]);
 
   const busy = loadingNews || loadingLang;
-  const playLabel =
-    radioState === "loading" || prefetching ? ui.preparingBulletin : ui.playBulletin;
 
   return (
     <div className="min-h-screen bg-[#0a0f1a] text-slate-50">
@@ -542,6 +674,9 @@ export function NewsRadioApp() {
           </div>
         </section>
 
+        {/* Listening (Radio Bulletin / Each Story) — only for languages with a wired-up TTS voice */}
+        {LISTENING_ENABLED_CODES.has(language.code) && (
+          <>
         {/* Mode toggle */}
         <div className="flex rounded-2xl border border-white/10 bg-white/5 p-1 gap-1">
           <button
@@ -609,15 +744,8 @@ export function NewsRadioApp() {
             />
           </div>
 
-          {audioPrefetched && radioState === "idle" && listenMode === "bulletin" && (
-            <p className="text-center text-teal-400/90 text-sm mb-4 flex items-center justify-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              {ui.readyToPlay}
-            </p>
-          )}
-
           {listenMode === "bulletin" ? (
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center min-h-[60px]">
               {radioState === "playing" ? (
                 <button
                   onClick={pauseRadio}
@@ -626,20 +754,16 @@ export function NewsRadioApp() {
                   <Pause className="w-6 h-6 fill-current" />
                   {ui.pause}
                 </button>
-              ) : (
+              ) : audioPrefetched || isOnAir ? (
                 <button
                   onClick={playBulletin}
-                  disabled={busy || !bulletinScript || !canListen || radioState === "loading"}
+                  disabled={busy || !bulletinScript || !canListen}
                   className="flex items-center justify-center gap-3 min-h-[60px] px-10 rounded-2xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 text-white text-lg font-bold"
                 >
-                  {radioState === "loading" || prefetching ? (
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                  ) : (
-                    <Play className="w-6 h-6 fill-current" />
-                  )}
-                  {playLabel}
+                  <Play className="w-6 h-6 fill-current" />
+                  {ui.playBulletin}
                 </button>
-              )}
+              ) : null}
               {isOnAir && (
                 <button
                   onClick={stopRadio}
@@ -676,24 +800,21 @@ export function NewsRadioApp() {
             </div>
           )}
 
-          <button
-            onClick={loadNews}
-            disabled={busy || isOnAir}
-            className="mt-4 w-full flex items-center justify-center gap-2 min-h-[48px] rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 disabled:opacity-40 text-base"
-          >
-            <RefreshCw className={cn("w-4 h-4", loadingNews && "animate-spin")} />
-            {ui.refresh}
-          </button>
-
           {!canListen && (
             <p className="text-center text-amber-400/90 text-sm mt-4">{ui.voiceNotReady}</p>
           )}
-          {sarvamFallback && language.code === "mai" && (
-            <p className="text-center text-amber-400/80 text-xs mt-2">
-              Maithili text · Hindi voice via Sarvam. Add BHASHINI_API_KEY for native Maithili.
-            </p>
-          )}
         </section>
+          </>
+        )}
+
+        <button
+          onClick={() => loadNews(true)}
+          disabled={busy || isOnAir}
+          className="w-full flex items-center justify-center gap-2 min-h-[48px] rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 disabled:opacity-40 text-base"
+        >
+          <RefreshCw className={cn("w-4 h-4", loadingNews && "animate-spin")} />
+          {ui.refresh}
+        </button>
 
         {error && (
           <p className="text-center text-red-400 text-base bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
@@ -713,9 +834,9 @@ export function NewsRadioApp() {
         {!busy && news.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider text-center">
-              {listenMode === "stories" ? ui.storiesMode : "Today's Headlines"}
+              {LISTENING_ENABLED_CODES.has(language.code) && listenMode === "stories" ? ui.storiesMode : "Today's Headlines"}
             </h2>
-            {news.map((item) => {
+            {news.slice(0, visibleCount).map((item) => {
               const isActive = playingStoryId === item.id;
               const isLoadingStory = isActive && radioState === "loading";
               const isPlayingStory = isActive && radioState === "playing";
@@ -741,10 +862,12 @@ export function NewsRadioApp() {
                       >
                         {item.headline}
                       </button>
-                      <p className="text-base text-slate-400 mt-2 leading-relaxed">{item.summary}</p>
+                      {item.summary && item.summary !== item.headline && (
+                        <p className="text-base text-slate-400 mt-2 leading-relaxed">{item.summary}</p>
+                      )}
                       <p className="text-xs text-slate-600 mt-2">{item.source}</p>
                     </div>
-                    {listenMode === "stories" && (
+                    {LISTENING_ENABLED_CODES.has(language.code) && listenMode === "stories" && (
                       <button
                         onClick={() => playStory(item)}
                         disabled={busy || !canListen || (isOnAir && !isActive)}
@@ -769,6 +892,11 @@ export function NewsRadioApp() {
                 </article>
               );
             })}
+            {visibleCount < news.length && (
+              <div ref={loadMoreSentinelRef} className="flex justify-center py-4">
+                <Loader2 className="w-5 h-5 text-slate-500 animate-spin" />
+              </div>
+            )}
           </section>
         )}
       </main>
@@ -808,9 +936,22 @@ export function NewsRadioApp() {
                 </p>
               )}
               {!summaryLoading && !summaryError && summaryText && (
-                <p className="text-base text-slate-300 leading-relaxed whitespace-pre-line">
-                  {summaryText}
-                </p>
+                <>
+                  <p className="text-base text-slate-300 leading-relaxed whitespace-pre-line">
+                    {summaryText}
+                  </p>
+                  {summaryUrl && (
+                    <a
+                      href={summaryUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 mt-4 text-sm text-teal-400 hover:text-teal-300 underline"
+                    >
+                      Read full article
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </>
               )}
             </div>
           </div>

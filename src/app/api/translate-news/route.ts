@@ -1,9 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenAIClient } from "@/lib/openai";
+import { getAnthropicClient, claudeStructured } from "@/lib/anthropic";
 import { getLanguageByCode } from "@/lib/languages";
-import { buildTranslationSystemPrompt } from "@/lib/translation-prompts";
+import { buildNewsChunkPrompt, buildUiOnlyPrompt } from "@/lib/translation-prompts";
 import { englishUi, UiStrings } from "@/lib/ui-strings";
 import { stitchBulletinFallback } from "@/lib/radio-bulletin";
+
+const NEWS_ITEM_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    id: { type: "string" },
+    rank: { type: "number" },
+    headline: { type: "string" },
+    summary: { type: "string" },
+    source: { type: "string" },
+  },
+  required: ["id", "rank", "headline", "summary", "source"],
+};
+
+const UI_STRINGS_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    title: { type: "string" },
+    subtitle: { type: "string" },
+    chooseLanguage: { type: "string" },
+    playBulletin: { type: "string" },
+    listenAllStories: { type: "string" },
+    listenStory: { type: "string" },
+    radioMode: { type: "string" },
+    storiesMode: { type: "string" },
+    pause: { type: "string" },
+    stop: { type: "string" },
+    refresh: { type: "string" },
+    onAir: { type: "string" },
+    preparingBulletin: { type: "string" },
+    loadingNews: { type: "string" },
+    preparingNews: { type: "string" },
+    voiceBrowser: { type: "string" },
+    voiceNotReady: { type: "string" },
+    nowPlaying: { type: "string" },
+    readyToPlay: { type: "string" },
+    storyLabel: { type: "string" },
+  },
+  required: [
+    "title", "subtitle", "chooseLanguage", "playBulletin", "listenAllStories", "listenStory",
+    "radioMode", "storiesMode", "pause", "stop", "refresh", "onAir", "preparingBulletin",
+    "loadingNews", "preparingNews", "voiceBrowser", "voiceNotReady", "nowPlaying", "readyToPlay",
+    "storyLabel",
+  ],
+};
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,12 +66,6 @@ interface TranslatedNewsItem {
   headline: string;
   summary: string;
   source: string;
-}
-
-interface TranslationPayload {
-  news: TranslatedNewsItem[];
-  ui?: UiStrings;
-  bulletinScript?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -62,40 +100,63 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ news: translated, ui: enUi, bulletinScript, language: lang });
     }
 
-    const client = getOpenAIClient();
+    const client = getAnthropicClient();
 
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: buildTranslationSystemPrompt(lang, news.length, dateLabel),
+    // Listening/audio is English-only for now, so the bulletin script for
+    // every other language is never shown — no need to ask the (slow) model
+    // to write one. Translate the news array in small parallel chunks and
+    // the UI labels in a separate parallel call; this is far faster than one
+    // big serial completion, especially now that the feed can be 20 items.
+    const CHUNK_SIZE = 2;
+    const chunks: NewsInput[][] = [];
+    for (let i = 0; i < news.length; i += CHUNK_SIZE) {
+      chunks.push(news.slice(i, i + CHUNK_SIZE));
+    }
+
+    const newsChunkPrompt = buildNewsChunkPrompt(lang);
+    const chunkPromises = chunks.map((chunk) =>
+      claudeStructured<{ news: TranslatedNewsItem[] }>(client, {
+        system: newsChunkPrompt,
+        userContent: JSON.stringify(chunk),
+        maxTokens: 800,
+        toolName: "return_news",
+        toolDescription: "Return the translated news items.",
+        inputSchema: {
+          type: "object",
+          properties: { news: { type: "array", items: NEWS_ITEM_SCHEMA } },
+          required: ["news"],
         },
-        {
-          role: "user",
-          content: JSON.stringify(news),
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 3500,
-      temperature: 0.4,
-    });
+      }).catch(() => ({ news: [] as TranslatedNewsItem[] }))
+    );
 
-    const raw = response.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw) as TranslationPayload;
+    const uiPromise = claudeStructured<{ ui: UiStrings }>(client, {
+      system: buildUiOnlyPrompt(lang, news.length),
+      userContent: "Translate the UI labels.",
+      maxTokens: 600,
+      toolName: "return_ui_strings",
+      toolDescription: "Return the translated UI label strings.",
+      inputSchema: {
+        type: "object",
+        properties: { ui: UI_STRINGS_SCHEMA },
+        required: ["ui"],
+      },
+    }).catch(() => ({ ui: enUi }));
 
-    if (!Array.isArray(parsed.news) || parsed.news.length === 0) {
+    const [uiParsed, ...chunkResults] = await Promise.all([uiPromise, ...chunkPromises]);
+
+    const translatedNews: TranslatedNewsItem[] = chunkResults
+      .flatMap((r) => r.news || [])
+      .sort((a, b) => a.rank - b.rank);
+
+    if (translatedNews.length === 0) {
       throw new Error("Translation returned no results");
     }
 
-    let bulletinScript = parsed.bulletinScript?.trim() || "";
-    if (bulletinScript.length < 100) {
-      bulletinScript = stitchBulletinFallback(lang, parsed.news, dateLabel);
-    }
+    const bulletinScript = stitchBulletinFallback(lang, translatedNews, dateLabel);
 
     return NextResponse.json({
-      news: parsed.news,
-      ui: parsed.ui || enUi,
+      news: translatedNews,
+      ui: uiParsed.ui || enUi,
       bulletinScript,
       language: lang,
     });

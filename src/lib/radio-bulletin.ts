@@ -8,6 +8,14 @@ export interface BulletinStory {
   source: string;
 }
 
+/** Push the summary as its own line (blank line before it = a pause), skipping it only when it just repeats the headline. */
+function pushSummaryLine(lines: string[], s: BulletinStory): void {
+  if (s.summary && s.summary !== s.headline) {
+    lines.push(``);
+    lines.push(s.summary);
+  }
+}
+
 /** Stitch a radio bulletin locally (fallback) */
 export function stitchBulletinFallback(
   lang: ConstitutionalLanguage,
@@ -22,7 +30,8 @@ export function stitchBulletinFallback(
       ``,
     ];
     stories.forEach((s, i) => {
-      lines.push(`Story number ${s.rank}. ${s.headline}. ${s.summary} Reporting from ${s.source}.`);
+      lines.push(`Story number ${s.rank}. ${s.headline}.`);
+      pushSummaryLine(lines, s);
       if (i < stories.length - 1) lines.push(`Next.`);
       lines.push(``);
     });
@@ -37,7 +46,8 @@ export function stitchBulletinFallback(
       ``,
     ];
     stories.forEach((s, i) => {
-      lines.push(`खबर नंबर ${s.rank}। ${s.headline}। ${s.summary} स्रोत ${s.source}।`);
+      lines.push(`खबर नंबर ${s.rank}। ${s.headline}।`);
+      pushSummaryLine(lines, s);
       if (i < stories.length - 1) lines.push(`अगली खबर।`);
       lines.push(``);
     });
@@ -52,7 +62,8 @@ export function stitchBulletinFallback(
       ``,
     ];
     stories.forEach((s, i) => {
-      lines.push(`खबर सङ्ख्या ${s.rank}। ${s.headline}। ${s.summary} सूचना स्रोत ${s.source}।`);
+      lines.push(`खबर सङ्ख्या ${s.rank}। ${s.headline}।`);
+      pushSummaryLine(lines, s);
       if (i < stories.length - 1) lines.push(`अगिला खबर।`);
       lines.push(``);
     });
@@ -67,7 +78,8 @@ export function stitchBulletinFallback(
     ``,
   ];
   stories.forEach((s, i) => {
-    lines.push(`${s.rank}. ${s.headline}. ${s.summary}. ${s.source}.`);
+    lines.push(`${s.rank}. ${s.headline}.`);
+    pushSummaryLine(lines, s);
     if (i < stories.length - 1) lines.push(`---`);
   });
   return lines.join("\n");
@@ -99,7 +111,7 @@ Write like ALL INDIA RADIO / FM gold bulletin — smooth, professional, for elde
    - "First," / "पहली खबर," / "खबर सङ्ख्या एक,"
    - "Moving on," / "अगली खबर," / "अगिला खबर,"
    - "In other news," / "इसी बीच,"
-3. Each story: headline + 2 short spoken sentences + source credit woven in naturally
+3. Each story: headline + 2 short spoken sentences — do NOT mention or credit the source outlet in the spoken script
 4. CLOSING (1-2 sentences): sign off warmly, thank listener
 
 Rules:

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenAIClient, SYSTEM_PROMPTS } from "@/lib/openai";
+import { SYSTEM_PROMPTS } from "@/lib/openai";
+import { getAnthropicClient, claudeText, CLAUDE_MODEL } from "@/lib/anthropic";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 25;
@@ -14,7 +15,7 @@ async function scrapeWithBudget(url: string): Promise<string> {
     const { scrapeArticle } = await import("@/lib/news/scraper");
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SCRAPE_BUDGET_MS));
     const result = await Promise.race([scrapeArticle(url).catch(() => null), timeout]);
-    return result?.content?.slice(0, 8000) || "";
+    return result?.content?.slice(0, 12000) || "";
   } catch {
     return "";
   }
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     const articleContent = url?.trim() ? await scrapeWithBudget(url.trim()) : "";
 
-    const client = getOpenAIClient();
+    const client = getAnthropicClient();
 
     const targetLanguage =
       languageName && languageName !== "English"
@@ -52,17 +53,14 @@ ${articleContent ? `ARTICLE TEXT:\n${articleContent}` : "No full article text av
 ${targetLanguage ? `\nWrite the summary entirely in ${targetLanguage}, using its native script. Do not use English.` : ""}
     `.trim();
 
-    const response = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPTS.headlineSummary },
-        { role: "user", content: userMessage },
-      ],
-      max_tokens: 500,
-      temperature: 0.3,
+    const response = await client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 1000,
+      system: SYSTEM_PROMPTS.headlineSummary,
+      messages: [{ role: "user", content: userMessage }],
     });
 
-    const summary = response.choices[0]?.message?.content?.trim() || "";
+    const summary = claudeText(response).trim();
 
     return NextResponse.json({ summary, scraped: !!articleContent });
   } catch (error: unknown) {

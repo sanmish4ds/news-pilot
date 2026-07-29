@@ -9,20 +9,19 @@ import { synthesizeSpeechMp3 as synthesizeElevenLabsMp3, isElevenLabsConfigured 
 
 export type TtsProvider = "sarvam" | "bhashini" | "elevenlabs";
 
+/** Sarvam is used only for these languages — everything else (including English) uses ElevenLabs. */
+const SARVAM_ONLY_CODES = new Set(["hi", "mai"]);
+
 export function getTtsProvider(languageCode: string): TtsProvider {
-  if (isSarvamConfigured() && supportsSarvam(languageCode)) {
+  if (SARVAM_ONLY_CODES.has(languageCode) && isSarvamConfigured() && supportsSarvam(languageCode)) {
     return "sarvam";
   }
-  // Maithili and other low-resource langs: Bhashini if available
-  if (
-    isBhashiniConfigured() &&
-    supportsBhashini(languageCode) &&
-    languageCode !== "en"
-  ) {
+  // Other low-resource langs: Bhashini if available
+  if (isBhashiniConfigured() && supportsBhashini(languageCode) && languageCode !== "en") {
     return "bhashini";
   }
   if (isElevenLabsConfigured()) return "elevenlabs";
-  if (supportsSarvam(languageCode)) return "sarvam";
+  if (isSarvamConfigured() && supportsSarvam(languageCode)) return "sarvam";
   return "elevenlabs";
 }
 
