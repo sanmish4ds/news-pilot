@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenAIClient, SYSTEM_PROMPTS } from "@/lib/openai";
-import { scrapeArticle } from "@/lib/news/scraper";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 25;
 
-const SCRAPE_BUDGET_MS = 6000;
+const SCRAPE_BUDGET_MS = 5000;
 
+// Loaded dynamically (and best-effort) so a bundling/runtime issue with the
+// jsdom/cheerio/readability stack can never crash this route — it just
+// falls back to summarizing from the headline/snippet alone.
 async function scrapeWithBudget(url: string): Promise<string> {
-  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SCRAPE_BUDGET_MS));
-  const result = await Promise.race([
-    scrapeArticle(url).catch(() => null),
-    timeout,
-  ]);
-  return result?.content?.slice(0, 8000) || "";
+  try {
+    const { scrapeArticle } = await import("@/lib/news/scraper");
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SCRAPE_BUDGET_MS));
+    const result = await Promise.race([scrapeArticle(url).catch(() => null), timeout]);
+    return result?.content?.slice(0, 8000) || "";
+  } catch {
+    return "";
+  }
 }
 
 export async function POST(req: NextRequest) {
