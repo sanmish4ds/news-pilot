@@ -67,7 +67,13 @@ const SPEAKER_RANK: Record<string, number> = {
   sa: 20, // Sanskrit — negligible native speakers
 };
 
-const FEATURED_CODES = ["en", "hi", "mai"];
+export const FEATURED_CODES = ["en", "hi", "mai"];
+
+/** Featured codes plus the next most-spoken languages — the tabs visible
+ * without scrolling the language picker. Background-prewarmed (sequentially,
+ * to avoid bursty concurrent LLM calls) so picking any of them feels instant
+ * instead of paying full translation latency on first click. */
+export const PREWARM_CODES = [...FEATURED_CODES, "bn", "mr", "te", "ta", "gu", "ur"];
 
 export const ALL_LANGUAGES = [
   ENGLISH_OPTION,

@@ -19,12 +19,13 @@ export interface UiStrings {
   nowPlaying: string;
   readyToPlay: string;
   storyLabel: string;
+  headlines: string;
 }
 
 export function englishUi(introCount = 10): { ui: UiStrings; introText: string } {
   return {
     ui: {
-      title: `The News Noice: Today's Top ${introCount} India News`,
+      title: `The News Noice: Today's Top ${introCount} News from India`,
       subtitle: "India · Listen in your language",
       chooseLanguage: "Choose your language",
       playBulletin: "Play Full Bulletin",
@@ -44,6 +45,7 @@ export function englishUi(introCount = 10): { ui: UiStrings; introText: string }
       nowPlaying: "Ready",
       readyToPlay: "Audio ready · tap play",
       storyLabel: "Story",
+      headlines: "Today's Headlines",
     },
     introText: `Here are today's top ${introCount} news from India.`,
   };

@@ -11,6 +11,15 @@ function sanitizeApiKey(raw: string): string {
 
 export const ELEVENLABS_API_KEY = sanitizeApiKey(process.env.ELEVENLABS_API_KEY || "");
 export const ELEVENLABS_VOICE_ID = (process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM").trim();
+/** Rachel — ElevenLabs' default US English female voice, used for English radio bulletins. */
+export const ELEVENLABS_VOICE_ID_EN = (
+  process.env.ELEVENLABS_VOICE_ID_EN || "21m00Tcm4TlvDq8ikWAM"
+).trim();
+
+function voiceIdForLanguage(languageCode?: string): string {
+  if (languageCode === "en") return ELEVENLABS_VOICE_ID_EN;
+  return ELEVENLABS_VOICE_ID;
+}
 export const ELEVENLABS_MODEL_ID = (process.env.ELEVENLABS_MODEL_ID || "eleven_turbo_v2_5").trim();
 export const ELEVENLABS_FALLBACK_MODEL_ID = (
   process.env.ELEVENLABS_FALLBACK_MODEL_ID || "eleven_multilingual_v2"
@@ -122,7 +131,7 @@ async function ttsWithFallback(
   throw lastErr || new Error("TTS failed");
 }
 
-export async function synthesizeSpeechMp3(fullText: string): Promise<Buffer> {
+export async function synthesizeSpeechMp3(fullText: string, languageCode?: string): Promise<Buffer> {
   if (!ELEVENLABS_API_KEY) {
     throw new Error("ELEVENLABS_API_KEY is not set");
   }
@@ -130,10 +139,11 @@ export async function synthesizeSpeechMp3(fullText: string): Promise<Buffer> {
   const segments = chunkText(fullText);
   if (!segments.length) throw new Error("Empty text");
 
+  const voiceId = voiceIdForLanguage(languageCode);
   const parallel = Math.min(6, Math.max(2, Number(process.env.ELEVENLABS_TTS_PARALLEL || 4) || 4));
 
   if (segments.length === 1) {
-    return ttsWithFallback(segments[0], ELEVENLABS_VOICE_ID, null, null);
+    return ttsWithFallback(segments[0], voiceId, null, null);
   }
 
   // Parallel synthesis for long bulletins (SQLclMCP pattern)
@@ -147,7 +157,7 @@ export async function synthesizeSpeechMp3(fullText: string): Promise<Buffer> {
       const next = i < segments.length - 1 ? segments[i + 1] : null;
       const prevSlice = prev ? (prev.length > 800 ? prev.slice(prev.length - 800) : prev) : null;
       const nextSlice = next ? (next.length > 800 ? next.slice(0, 800) : next) : null;
-      buffers[i] = await ttsWithFallback(segments[i], ELEVENLABS_VOICE_ID, prevSlice, nextSlice);
+      buffers[i] = await ttsWithFallback(segments[i], voiceId, prevSlice, nextSlice);
     }
   }
 

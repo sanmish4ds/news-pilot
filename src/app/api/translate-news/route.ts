@@ -56,12 +56,13 @@ const UI_STRINGS_SCHEMA = {
     nowPlaying: { type: "string" },
     readyToPlay: { type: "string" },
     storyLabel: { type: "string" },
+    headlines: { type: "string" },
   },
   required: [
     "title", "subtitle", "chooseLanguage", "playBulletin", "listenAllStories", "listenStory",
     "radioMode", "storiesMode", "pause", "stop", "refresh", "onAir", "preparingBulletin",
     "loadingNews", "preparingNews", "voiceBrowser", "voiceNotReady", "nowPlaying", "readyToPlay",
-    "storyLabel",
+    "storyLabel", "headlines",
   ],
 };
 
@@ -135,30 +136,33 @@ export async function POST(req: NextRequest) {
 
     // Listening/audio is English-only for now, so the bulletin script for
     // every other language is never shown — no need to ask the (slow) model
-    // to write one. Translate the news array in small parallel chunks and
-    // the UI labels in a separate parallel call; this is far faster than one
-    // big serial completion, especially now that the feed can be 20 items.
-    const CHUNK_SIZE = 2;
-    const chunks: NewsInput[][] = [];
-    for (let i = 0; i < news.length; i += CHUNK_SIZE) {
-      chunks.push(news.slice(i, i + CHUNK_SIZE));
-    }
-
+    // to write one. Translate the whole news array in a single call (plus a
+    // separate parallel call for the UI labels) instead of splitting into
+    // many small chunk calls — fewer concurrent Anthropic requests means
+    // less exposure to per-account rate limiting, whose retry/backoff was
+    // the actual source of multi-second stalls, not the translation itself.
     const newsChunkPrompt = buildNewsChunkPrompt(lang);
-    const chunkPromises = chunks.map((chunk) =>
-      claudeStructured<{ news: TranslatedNewsItem[] }>(client, {
-        system: newsChunkPrompt,
-        userContent: JSON.stringify(chunk),
-        maxTokens: 800,
-        toolName: "return_news",
-        toolDescription: "Return the translated news items.",
-        inputSchema: {
-          type: "object",
-          properties: { news: { type: "array", items: NEWS_ITEM_SCHEMA } },
-          required: ["news"],
-        },
-      }).catch(() => ({ news: [] as TranslatedNewsItem[] }))
-    );
+    // Non-Latin scripts (Devanagari, Bengali, Tamil, …) cost noticeably more
+    // output tokens per character than English/Latin script does, plus JSON
+    // field-name/escaping overhead on top — 220 tokens/item was tuned for
+    // Latin text and was silently truncating Maithili's tool-call JSON mid-
+    // object on larger batches, which surfaced as "Translation returned no
+    // results". Give non-English scripts a bigger per-item budget and a
+    // higher ceiling (claude-sonnet-4-6 supports well beyond 4096 output).
+    const perItemTokens = languageCode === "en" ? 220 : 450;
+    const maxTokensCap = languageCode === "en" ? 4096 : 8192;
+    const newsPromise = claudeStructured<{ news: TranslatedNewsItem[] }>(client, {
+      system: newsChunkPrompt,
+      userContent: JSON.stringify(news),
+      maxTokens: Math.min(maxTokensCap, 300 + news.length * perItemTokens),
+      toolName: "return_news",
+      toolDescription: "Return the translated news items.",
+      inputSchema: {
+        type: "object",
+        properties: { news: { type: "array", items: NEWS_ITEM_SCHEMA } },
+        required: ["news"],
+      },
+    }).catch(() => ({ news: [] as TranslatedNewsItem[] }));
 
     const uiPromise = claudeStructured<{ ui: UiStrings }>(client, {
       system: buildUiOnlyPrompt(lang, news.length),
@@ -173,22 +177,34 @@ export async function POST(req: NextRequest) {
       },
     }).catch(() => ({ ui: enUi }));
 
-    const [uiParsed, ...chunkResults] = await Promise.all([uiPromise, ...chunkPromises]);
+    const [uiParsed, newsParsed] = await Promise.all([uiPromise, newsPromise]);
 
-    const translatedNews: TranslatedNewsItem[] = chunkResults
-      .flatMap((r) => r.news || [])
-      .sort((a, b) => a.rank - b.rank);
+    let translatedNews: TranslatedNewsItem[] = (newsParsed.news || []).sort(
+      (a, b) => a.rank - b.rank
+    );
+    const translationFailed = translatedNews.length === 0;
 
-    if (translatedNews.length === 0) {
-      throw new Error("Translation returned no results");
+    // Translation failed outright (truncated/rejected tool call) — better to
+    // show the English source text than a broken "no results" error page.
+    if (translationFailed) {
+      translatedNews = news.map((item) => ({
+        id: item.id,
+        rank: item.rank,
+        headline: item.title,
+        summary: item.snippet || item.title,
+        source: item.source,
+      }));
     }
 
     const bulletinScript = stitchBulletinFallback(lang, translatedNews, dateLabel);
     const result = { news: translatedNews, ui: uiParsed.ui || enUi, bulletinScript };
-    translationCache.set(cacheKey, result);
+    // Don't cache a degraded English fallback — the next request should get
+    // a real shot at translating instead of being stuck with English for
+    // the full cache TTL.
+    if (!translationFailed) translationCache.set(cacheKey, result);
     if (LISTENING_ENABLED_CODES.has(languageCode)) warmTtsCache(bulletinScript, languageCode);
 
-    return NextResponse.json({ ...result, language: lang });
+    return NextResponse.json({ ...result, language: lang, translationDegraded: translationFailed });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Translation failed";
     return NextResponse.json({ error: message }, { status: 500 });

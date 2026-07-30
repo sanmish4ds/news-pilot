@@ -54,7 +54,7 @@ export async function synthesizeSpeech(
     throw new Error("Set SARVAM_API_KEY for Indian language voices (dashboard.sarvam.ai)");
   }
 
-  const mp3 = await synthesizeElevenLabsMp3(text);
+  const mp3 = await synthesizeElevenLabsMp3(text, languageCode);
   return { mp3, provider: "elevenlabs" };
 }
 
