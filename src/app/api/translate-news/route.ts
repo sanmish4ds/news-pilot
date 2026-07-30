@@ -136,11 +136,14 @@ export async function POST(req: NextRequest) {
 
     // Listening/audio is English-only for now, so the bulletin script for
     // every other language is never shown — no need to ask the (slow) model
-    // to write one. Translate the whole news array in a single call (plus a
-    // separate parallel call for the UI labels) instead of splitting into
-    // many small chunk calls — fewer concurrent Anthropic requests means
-    // less exposure to per-account rate limiting, whose retry/backoff was
-    // the actual source of multi-second stalls, not the translation itself.
+    // to write one. Translate the news array in a few moderate-size parallel
+    // chunks (plus a separate parallel call for the UI labels): a single
+    // call covering all 20 items generates enough output for Hindi/Maithili
+    // that it can run long enough with no bytes flowing to trip an upstream
+    // proxy's inactivity timeout (seen as a raw "Inactivity Timeout" HTML
+    // page instead of our JSON) — but too many small chunks reintroduces the
+    // concurrent-request burst that used to trigger Anthropic rate-limit
+    // retries. A handful of ~8-item chunks keeps both risks low.
     const newsChunkPrompt = buildNewsChunkPrompt(lang);
     // Non-Latin scripts (Devanagari, Bengali, Tamil, …) cost noticeably more
     // output tokens per character than English/Latin script does, plus JSON
@@ -151,18 +154,26 @@ export async function POST(req: NextRequest) {
     // higher ceiling (claude-sonnet-4-6 supports well beyond 4096 output).
     const perItemTokens = languageCode === "en" ? 220 : 450;
     const maxTokensCap = languageCode === "en" ? 4096 : 8192;
-    const newsPromise = claudeStructured<{ news: TranslatedNewsItem[] }>(client, {
-      system: newsChunkPrompt,
-      userContent: JSON.stringify(news),
-      maxTokens: Math.min(maxTokensCap, 300 + news.length * perItemTokens),
-      toolName: "return_news",
-      toolDescription: "Return the translated news items.",
-      inputSchema: {
-        type: "object",
-        properties: { news: { type: "array", items: NEWS_ITEM_SCHEMA } },
-        required: ["news"],
-      },
-    }).catch(() => ({ news: [] as TranslatedNewsItem[] }));
+    const CHUNK_SIZE = 8;
+    const chunks: NewsInput[][] = [];
+    for (let i = 0; i < news.length; i += CHUNK_SIZE) {
+      chunks.push(news.slice(i, i + CHUNK_SIZE));
+    }
+
+    const chunkPromises = chunks.map((chunk) =>
+      claudeStructured<{ news: TranslatedNewsItem[] }>(client, {
+        system: newsChunkPrompt,
+        userContent: JSON.stringify(chunk),
+        maxTokens: Math.min(maxTokensCap, 300 + chunk.length * perItemTokens),
+        toolName: "return_news",
+        toolDescription: "Return the translated news items.",
+        inputSchema: {
+          type: "object",
+          properties: { news: { type: "array", items: NEWS_ITEM_SCHEMA } },
+          required: ["news"],
+        },
+      }).catch(() => ({ news: [] as TranslatedNewsItem[] }))
+    );
 
     const uiPromise = claudeStructured<{ ui: UiStrings }>(client, {
       system: buildUiOnlyPrompt(lang, news.length),
@@ -177,24 +188,27 @@ export async function POST(req: NextRequest) {
       },
     }).catch(() => ({ ui: enUi }));
 
-    const [uiParsed, newsParsed] = await Promise.all([uiPromise, newsPromise]);
+    const [uiParsed, ...chunkResults] = await Promise.all([uiPromise, ...chunkPromises]);
 
-    let translatedNews: TranslatedNewsItem[] = (newsParsed.news || []).sort(
-      (a, b) => a.rank - b.rank
-    );
-    const translationFailed = translatedNews.length === 0;
-
-    // Translation failed outright (truncated/rejected tool call) — better to
-    // show the English source text than a broken "no results" error page.
-    if (translationFailed) {
-      translatedNews = news.map((item) => ({
+    const translated = chunkResults.flatMap((r) => r.news || []);
+    const translatedIds = new Set(translated.map((n) => n.id));
+    // One chunk's tool call can fail (truncated/rejected) independently of
+    // the others — backfill just the missing items with their English
+    // source text instead of discarding the whole batch when only one
+    // chunk out of several actually failed.
+    const missing = news
+      .filter((item) => !translatedIds.has(item.id))
+      .map((item) => ({
         id: item.id,
         rank: item.rank,
         headline: item.title,
         summary: item.snippet || item.title,
         source: item.source,
       }));
-    }
+    const translationFailed = translated.length === 0;
+    const translatedNews: TranslatedNewsItem[] = [...translated, ...missing].sort(
+      (a, b) => a.rank - b.rank
+    );
 
     const bulletinScript = stitchBulletinFallback(lang, translatedNews, dateLabel);
     const result = { news: translatedNews, ui: uiParsed.ui || enUi, bulletinScript };
