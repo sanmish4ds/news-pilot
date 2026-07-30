@@ -152,10 +152,10 @@ export async function synthesizeSarvamMp3(
   const segments = chunkText(text);
   if (!segments.length) throw new Error("Empty text");
 
-  const buffers: Buffer[] = [];
-  for (const seg of segments) {
-    buffers.push(await synthesizeSegment(seg, targetLanguageCode));
-  }
+  // Segments are independent — synthesize them all in parallel instead of
+  // one at a time. A 20-story bulletin previously took the sum of every
+  // chunk's latency (30s+); now it takes only the slowest one.
+  const buffers = await Promise.all(segments.map((seg) => synthesizeSegment(seg, targetLanguageCode)));
 
   return { mp3: Buffer.concat(buffers), usesFallback };
 }

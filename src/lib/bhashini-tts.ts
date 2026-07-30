@@ -108,9 +108,7 @@ export async function synthesizeBhashiniMp3(
   const segments = chunkText(text);
   if (!segments.length) throw new Error("Empty text");
 
-  const buffers: Buffer[] = [];
-  for (const seg of segments) {
-    buffers.push(await synthesizeSegment(seg, bhashiniLang));
-  }
+  // Independent segments — synthesize in parallel, not one at a time.
+  const buffers = await Promise.all(segments.map((seg) => synthesizeSegment(seg, bhashiniLang)));
   return Buffer.concat(buffers);
 }

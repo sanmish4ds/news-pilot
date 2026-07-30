@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SYSTEM_PROMPTS } from "@/lib/openai";
 import { getAnthropicClient, claudeText, CLAUDE_MODEL } from "@/lib/anthropic";
+import { createServerCache, hashKey } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 25;
 
 const SCRAPE_BUDGET_MS = 5000;
+// Same headline's summary is identical for everyone in the same language —
+// cache it server-side so a page reload or a second visitor reading the
+// same story skips the scrape + LLM call entirely.
+const SUMMARY_CACHE_TTL_MS = 20 * 60 * 1000;
+const summaryCache = createServerCache<{ summary: string; scraped: boolean }>(SUMMARY_CACHE_TTL_MS);
 
 // Loaded dynamically (and best-effort) so a bundling/runtime issue with the
 // jsdom/cheerio/readability stack can never crash this route — it just
@@ -36,6 +42,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Headline is required." }, { status: 400 });
     }
 
+    const cacheKey = hashKey(headline, source || "", url || "", languageName || "en");
+    const cached = summaryCache.get(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
     const articleContent = url?.trim() ? await scrapeWithBudget(url.trim()) : "";
 
     const client = getAnthropicClient();
@@ -61,8 +73,10 @@ ${targetLanguage ? `\nWrite the summary entirely in ${targetLanguage}, using its
     });
 
     const summary = claudeText(response).trim();
+    const result = { summary, scraped: !!articleContent };
+    summaryCache.set(cacheKey, result);
 
-    return NextResponse.json({ summary, scraped: !!articleContent });
+    return NextResponse.json(result);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Summarize failed";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -4,6 +4,22 @@ import { getLanguageByCode } from "@/lib/languages";
 import { buildNewsChunkPrompt, buildUiOnlyPrompt } from "@/lib/translation-prompts";
 import { englishUi, UiStrings } from "@/lib/ui-strings";
 import { stitchBulletinFallback } from "@/lib/radio-bulletin";
+import { createServerCache, hashKey } from "@/lib/server-cache";
+import { warmTtsCache } from "@/lib/tts-cache";
+
+// Listening is only wired up for these languages — no point pre-warming
+// TTS audio that's never played (see LISTENING_ENABLED_CODES in NewsRadioApp.tsx).
+const LISTENING_ENABLED_CODES = new Set(["en", "hi", "mai"]);
+
+// Same day's news translates identically for every visitor in a given
+// language — cache the result server-side so only the first person to pick
+// a language each day pays for the LLM call; everyone after gets it instantly.
+const TRANSLATION_CACHE_TTL_MS = 20 * 60 * 1000;
+const translationCache = createServerCache<{
+  news: unknown[];
+  ui: unknown;
+  bulletinScript: string;
+}>(TRANSLATION_CACHE_TTL_MS);
 
 const NEWS_ITEM_SCHEMA = {
   type: "object" as const,
@@ -97,7 +113,22 @@ export async function POST(req: NextRequest) {
         source: item.source,
       }));
       const bulletinScript = stitchBulletinFallback(lang, translated, dateLabel);
+      if (LISTENING_ENABLED_CODES.has(languageCode)) warmTtsCache(bulletinScript, languageCode);
       return NextResponse.json({ news: translated, ui: enUi, bulletinScript, language: lang });
+    }
+
+    const cacheKey = hashKey(
+      languageCode,
+      dateLabel,
+      news.map((n) => n.id).join(","),
+      news.map((n) => n.title).join("|")
+    );
+    const cachedResult = translationCache.get(cacheKey);
+    if (cachedResult) {
+      if (LISTENING_ENABLED_CODES.has(languageCode)) {
+        warmTtsCache(cachedResult.bulletinScript, languageCode);
+      }
+      return NextResponse.json({ ...cachedResult, language: lang });
     }
 
     const client = getAnthropicClient();
@@ -153,13 +184,11 @@ export async function POST(req: NextRequest) {
     }
 
     const bulletinScript = stitchBulletinFallback(lang, translatedNews, dateLabel);
+    const result = { news: translatedNews, ui: uiParsed.ui || enUi, bulletinScript };
+    translationCache.set(cacheKey, result);
+    if (LISTENING_ENABLED_CODES.has(languageCode)) warmTtsCache(bulletinScript, languageCode);
 
-    return NextResponse.json({
-      news: translatedNews,
-      ui: uiParsed.ui || enUi,
-      bulletinScript,
-      language: lang,
-    });
+    return NextResponse.json({ ...result, language: lang });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Translation failed";
     return NextResponse.json({ error: message }, { status: 500 });

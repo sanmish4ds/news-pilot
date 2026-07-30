@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { synthesizeSpeech, getTtsStatus } from "@/lib/tts-router";
+import { getTtsStatus } from "@/lib/tts-router";
+import { getOrSynthesizeSpeech } from "@/lib/tts-cache";
 
 export const maxDuration = 180;
 
@@ -21,17 +22,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { mp3, provider, usesFallback } = await synthesizeSpeech(
-      String(text).trim(),
-      languageCode
-    );
+    const result = await getOrSynthesizeSpeech(String(text).trim(), languageCode);
 
-    return new NextResponse(new Uint8Array(mp3), {
+    return new NextResponse(new Uint8Array(result.mp3), {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
-        "X-TTS-Provider": provider,
-        "X-TTS-Fallback": usesFallback ? "1" : "0",
+        "X-TTS-Provider": result.provider,
+        "X-TTS-Fallback": result.usesFallback ? "1" : "0",
         "Cache-Control": "private, max-age=3600",
       },
     });
