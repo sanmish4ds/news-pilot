@@ -13,11 +13,17 @@ export type TtsProvider = "sarvam" | "bhashini" | "elevenlabs";
 const SARVAM_ONLY_CODES = new Set(["hi", "mai"]);
 
 export function getTtsProvider(languageCode: string): TtsProvider {
+  // English is ElevenLabs, full stop — never silently fall back to Sarvam
+  // just because ELEVENLABS_API_KEY happens to be missing in an environment;
+  // that produced the wrong voice with no visible warning. Better to fail
+  // loudly (see synthesizeSpeech below) than switch voices without saying so.
+  if (languageCode === "en") return "elevenlabs";
+
   if (SARVAM_ONLY_CODES.has(languageCode) && isSarvamConfigured() && supportsSarvam(languageCode)) {
     return "sarvam";
   }
   // Other low-resource langs: Bhashini if available
-  if (isBhashiniConfigured() && supportsBhashini(languageCode) && languageCode !== "en") {
+  if (isBhashiniConfigured() && supportsBhashini(languageCode)) {
     return "bhashini";
   }
   if (isElevenLabsConfigured()) return "elevenlabs";
@@ -26,6 +32,7 @@ export function getTtsProvider(languageCode: string): TtsProvider {
 }
 
 export function isTtsConfigured(languageCode?: string): boolean {
+  if (languageCode === "en") return isElevenLabsConfigured();
   return (
     isSarvamConfigured() ||
     isBhashiniConfigured() ||
@@ -51,7 +58,11 @@ export async function synthesizeSpeech(
   }
 
   if (!isElevenLabsConfigured()) {
-    throw new Error("Set SARVAM_API_KEY for Indian language voices (dashboard.sarvam.ai)");
+    throw new Error(
+      languageCode === "en"
+        ? "Set ELEVENLABS_API_KEY for the English voice."
+        : "Set SARVAM_API_KEY for Indian language voices (dashboard.sarvam.ai)"
+    );
   }
 
   const mp3 = await synthesizeElevenLabsMp3(text, languageCode);
