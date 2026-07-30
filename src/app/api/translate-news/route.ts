@@ -154,7 +154,15 @@ export async function POST(req: NextRequest) {
     // higher ceiling (claude-sonnet-4-6 supports well beyond 4096 output).
     const perItemTokens = languageCode === "en" ? 220 : 450;
     const maxTokensCap = languageCode === "en" ? 4096 : 8192;
-    const CHUNK_SIZE = 8;
+    // Chunks run in parallel (Promise.all below), so total wall time is
+    // bounded by the SLOWEST chunk, not their sum — measured ~4s/item plus
+    // ~3.5s fixed overhead per Claude call for Hindi/Maithili, so an 8-item
+    // chunk alone took ~36s, comfortably past most platforms' function/
+    // gateway timeout on its own regardless of how few chunks there were.
+    // A smaller chunk size keeps every individual call's wall time short;
+    // parallel fan-out at 4-5 concurrent calls didn't show meaningful
+    // rate-limit slowdown in testing, so this is a straight win.
+    const CHUNK_SIZE = 3;
     const chunks: NewsInput[][] = [];
     for (let i = 0; i < news.length; i += CHUNK_SIZE) {
       chunks.push(news.slice(i, i + CHUNK_SIZE));
