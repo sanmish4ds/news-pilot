@@ -708,7 +708,10 @@ export function NewsRadioApp() {
           <p className="text-base text-slate-400 mt-1">{ui.subtitle}</p>
 
           {/* Language toggle — English / Hindi */}
-          <div className="mt-7 inline-flex rounded-full border border-white/10 bg-white/5 p-1 shadow-inner">
+          <h2 className="mt-7 text-sm font-semibold text-slate-500 uppercase tracking-wider">
+            {ui.chooseLanguage}
+          </h2>
+          <div className="mt-3 inline-flex rounded-full border border-white/10 bg-white/5 p-1 shadow-inner">
             {ALL_LANGUAGES.map((lang) => (
               <button
                 key={lang.code}
