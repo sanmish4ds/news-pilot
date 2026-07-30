@@ -50,7 +50,7 @@ function formatTime(seconds: number): string {
 
 const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
 
-/** Languages with a TTS voice wired up (English via ElevenLabs, Hindi/Maithili via Sarvam) — listening controls show only for these. */
+/** Languages with a TTS voice wired up (English/Hindi/Maithili via ElevenLabs, or Bhashini if configured) — listening controls show only for these. */
 const LISTENING_ENABLED_CODES = new Set(["en", "hi", "mai"]);
 
 const SUMMARY_PLAYBACK_LABEL = "Summary";
@@ -110,10 +110,7 @@ export function NewsRadioApp() {
   const bulletinScript = bulletin.langCode === language.code ? bulletin.script : "";
   const [loadingNews, setLoadingNews] = useState(true);
   const [loadingLang, setLoadingLang] = useState(false);
-  const [ttsProvider, setTtsProvider] = useState("");
-  const [sarvamReady, setSarvamReady] = useState(false);
   const [serverTtsReady, setServerTtsReady] = useState(false);
-  const [sarvamFallback, setSarvamFallback] = useState(false);
   const [browserSpeechReady, setBrowserSpeechReady] = useState(false);
   const [radioState, setRadioState] = useState<RadioState>("idle");
   const [audioPrefetched, setAudioPrefetched] = useState(false);
@@ -630,21 +627,14 @@ export function NewsRadioApp() {
 
   useEffect(() => {
     fetchJson<{
-      sarvam?: boolean;
       enabled?: boolean;
       bhashini?: boolean;
       elevenlabs?: boolean;
-      provider?: string;
-      sarvamFallback?: boolean;
     }>(`/api/tts-status?lang=${language.code}`)
       .then((d) => {
-        setSarvamReady(!!d.sarvam);
-        setServerTtsReady(!!(d.enabled && (d.sarvam || d.bhashini || d.elevenlabs)));
-        setTtsProvider(d.provider || "");
-        setSarvamFallback(!!d.sarvamFallback);
+        setServerTtsReady(!!(d.enabled && (d.bhashini || d.elevenlabs)));
       })
       .catch(() => {
-        setSarvamReady(false);
         setServerTtsReady(false);
       });
   }, [language.code]);

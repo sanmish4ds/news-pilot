@@ -41,7 +41,7 @@ export function englishUi(introCount = 10): { ui: UiStrings; introText: string }
       loadingNews: "Loading today's news…",
       preparingNews: "Preparing news…",
       voiceBrowser: "Using browser voice",
-      voiceNotReady: "Voice not ready. Add SARVAM_API_KEY to .env.local",
+      voiceNotReady: "Voice not ready. Add ELEVENLABS_API_KEY to .env.local",
       nowPlaying: "Ready",
       readyToPlay: "Audio ready · tap play",
       storyLabel: "Story",

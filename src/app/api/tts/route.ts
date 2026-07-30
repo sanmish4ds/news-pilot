@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     if (!status.enabled) {
       return NextResponse.json(
         {
-          error: "Set SARVAM_API_KEY in .env.local (https://dashboard.sarvam.ai)",
+          error: "Set ELEVENLABS_API_KEY in .env.local",
         },
         { status: 503 }
       );

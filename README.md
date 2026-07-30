@@ -6,7 +6,7 @@ Audio-first news for everyone — especially listeners aged 50+ who prefer to **
 
 - **Top 10 India news** refreshed from Google News RSS
 - **22 constitutional languages** + English
-- **Sarvam AI (Bulbul v3)** — natural Indian language voices
+- **ElevenLabs** — natural voices for English, Hindi, Maithili and more (Bhashini as an optional native-voice fallback for low-resource languages)
 - **Two listen modes** — full radio bulletin or each story individually
 - **Accessible UI** — large buttons, high contrast, audio-first
 
@@ -21,7 +21,7 @@ Add keys to `.env.local`:
 
 ```
 OPENAI_API_KEY=sk-...       # translation
-SARVAM_API_KEY=sk-...       # TTS — dashboard.sarvam.ai
+ELEVENLABS_API_KEY=sk-...   # TTS
 ```
 
 ```bash
@@ -61,8 +61,8 @@ Netlify → **Site configuration** → **Environment variables** → **Add a var
 | Variable | Required |
 |----------|----------|
 | `OPENAI_API_KEY` | Yes |
-| `SARVAM_API_KEY` | Yes |
-| `BHASHINI_API_KEY` | No (Maithili native voice) |
+| `ELEVENLABS_API_KEY` | Yes |
+| `BHASHINI_API_KEY` | No (native voice for low-resource languages) |
 
 Redeploy after adding variables (**Deploys** → **Trigger deploy** → **Clear cache and deploy site**).
 
@@ -86,7 +86,7 @@ See `render.yaml` and `Dockerfile`. Use **Docker** or **Node** runtime — not E
 1. Fetches today's top 10 India headlines
 2. You pick a language (Hindi, Tamil, Maithili, etc.)
 3. OpenAI translates + builds a radio script
-4. Sarvam AI reads it aloud — full bulletin or one story at a time
+4. ElevenLabs reads it aloud — full bulletin or one story at a time
 
 ## Languages
 
