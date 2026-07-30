@@ -15,9 +15,14 @@ export const ELEVENLABS_VOICE_ID = (process.env.ELEVENLABS_VOICE_ID || "21m00Tcm
 export const ELEVENLABS_VOICE_ID_EN = (
   process.env.ELEVENLABS_VOICE_ID_EN || "21m00Tcm4TlvDq8ikWAM"
 ).trim();
+/** Multilingual voice used for Hindi bulletins — eleven_multilingual_v2/turbo_v2_5 both support Hindi with this voice. */
+export const ELEVENLABS_VOICE_ID_HI = (
+  process.env.ELEVENLABS_VOICE_ID_HI || ELEVENLABS_VOICE_ID
+).trim();
 
 function voiceIdForLanguage(languageCode?: string): string {
   if (languageCode === "en") return ELEVENLABS_VOICE_ID_EN;
+  if (languageCode === "hi") return ELEVENLABS_VOICE_ID_HI;
   return ELEVENLABS_VOICE_ID;
 }
 export const ELEVENLABS_MODEL_ID = (process.env.ELEVENLABS_MODEL_ID || "eleven_turbo_v2_5").trim();

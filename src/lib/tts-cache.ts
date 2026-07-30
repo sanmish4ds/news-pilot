@@ -6,7 +6,10 @@ export interface TtsResult {
   provider: string;
 }
 
-const TTL_MS = 20 * 60 * 1000;
+// Longer than the hourly cache-warmer's cadence (see cache-warmer.ts) plus a
+// buffer, so bulletin audio synthesized by one warm-up run stays cached for
+// real listeners until the next run replaces it.
+const TTL_MS = 75 * 60 * 1000;
 const cache = createServerCache<TtsResult>(TTL_MS);
 // Dedupes concurrent requests for the same text — without this, a background
 // warm-up and a user's play click landing at the same time would trigger two

@@ -13,15 +13,15 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: SARVAM_API_KEY
-        sync: false
-      - key: SARVAM_SPEAKER
-        value: shubh
-      - key: SARVAM_PACE
-        value: "0.92"
-      - key: BHASHINI_API_KEY
+      - key: SERPER_API_KEY
         sync: false
       - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID_EN
+        sync: false
+      - key: ELEVENLABS_VOICE_ID_HI
         sync: false

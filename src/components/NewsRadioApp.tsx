@@ -50,8 +50,8 @@ function formatTime(seconds: number): string {
 
 const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
 
-/** Listening is English-only — audio player controls show only for this language. */
-const LISTENING_ENABLED_CODES = new Set(["en"]);
+/** Listening is available for English and Hindi — audio player controls show only for these languages. */
+const LISTENING_ENABLED_CODES = new Set(["en", "hi"]);
 
 const SUMMARY_PLAYBACK_LABEL = "Summary";
 
@@ -514,6 +514,27 @@ export function NewsRadioApp() {
       writeSessionCache("np:topnews", data);
       setRawNews(data.news);
       setDate(data.date);
+
+      // The server responds with headlines immediately and fills in per-story
+      // one-sentence summaries in the background (see /api/top-news) — if
+      // this fetch landed before that finished, quietly re-poll once to pick
+      // up the enriched snippets instead of leaving today's session stuck on
+      // headline-only summaries.
+      if (data.news.some((item) => !item.snippet)) {
+        setTimeout(async () => {
+          try {
+            const refreshed = await fetchJson<{ news: RawNewsItem[]; date: string }>("/api/top-news");
+            if (refreshed.date !== data.date) return;
+            translationCacheRef.current.clear();
+            summaryCacheRef.current.clear();
+            clearDerivedSessionCaches();
+            writeSessionCache("np:topnews", refreshed);
+            setRawNews(refreshed.news);
+          } catch {
+            // best-effort — headlines alone are a fine fallback
+          }
+        }, 6000);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not load news");
     } finally {
@@ -585,12 +606,12 @@ export function NewsRadioApp() {
     [stopRadio, clearCache, ui.preparingNews]
   );
 
-  // Background warm-up for the featured tabs (English/Hindi/Maithili) not
-  // currently selected — populates the same caches translateNews reads from,
-  // without touching displayed state. Without this, switching to a tab you
-  // haven't visited yet always pays the full translation latency; with it,
-  // by the time someone taps Maithili it's often already cached from the
-  // moment the news list first loaded.
+  // Background warm-up for the featured tab (Hindi) not currently selected —
+  // populates the same caches translateNews reads from, without touching
+  // displayed state. Without this, switching to Hindi before it's been
+  // visited always pays the full translation latency; with it, by the time
+  // someone taps Hindi it's often already cached from the moment the news
+  // list first loaded.
   const prefetchTranslationSilently = useCallback(
     async (lang: ConstitutionalLanguage, items: RawNewsItem[], dateStr: string) => {
       if (!items.length) return;
@@ -626,10 +647,10 @@ export function NewsRadioApp() {
   }, [loadNews]);
 
   useEffect(() => {
-    // Listening is English-only — skip the network round-trip entirely for
-    // every other language instead of checking (and immediately discarding)
-    // TTS readiness on every tab switch.
-    if (language.code !== "en") {
+    // Listening is only available for English and Hindi — skip the network
+    // round-trip entirely for every other language instead of checking (and
+    // immediately discarding) TTS readiness on every tab switch.
+    if (!LISTENING_ENABLED_CODES.has(language.code)) {
       setServerTtsReady(false);
       return;
     }
