@@ -92,6 +92,33 @@ export interface TranslateNewsResult {
   translationDegraded?: boolean;
 }
 
+function translationCacheKeyFor(news: NewsInput[], languageCode: string, dateLabel: string): string {
+  return hashKey(
+    languageCode,
+    dateLabel,
+    news.map((n) => n.id).join(","),
+    news.map((n) => n.title).join("|")
+  );
+}
+
+/** Read-only presence check for status reporting — never triggers translation. English is
+ * always instant/uncached so it's reported as always "ready". */
+export function isTranslationCached(news: NewsInput[], languageCode: string, dateLabel: string): boolean {
+  if (languageCode === "en") return true;
+  return translationCache.has(translationCacheKeyFor(news, languageCode, dateLabel));
+}
+
+/** Read-only cache read for status reporting — returns the cached translation (including
+ * bulletinScript) without triggering generation, or undefined if not cached. English isn't
+ * cached (it's free to compute) so this returns undefined for it; callers should special-case it. */
+export function peekTranslation(
+  news: NewsInput[],
+  languageCode: string,
+  dateLabel: string
+): { news: TranslatedNewsItem[]; ui: UiStrings; bulletinScript: string } | undefined {
+  return translationCache.get(translationCacheKeyFor(news, languageCode, dateLabel));
+}
+
 function englishFallback(items: NewsInput[]): TranslatedNewsItem[] {
   return items.map((item) => ({
     id: item.id,

@@ -1,10 +1,17 @@
 import { refreshTopNews } from "./news/top-news-service";
-import { NewsInput, translateNewsForLanguage } from "./news/translate-service";
+import { NewsInput, TranslatedNewsItem, translateNewsForLanguage } from "./news/translate-service";
+import { generateSummaryBlocking } from "./news/summarize-service";
+import { getLanguageByCode } from "./languages";
 
 // The app only supports English and Hindi (see languages.ts) — English needs
-// no LLM call, Hindi costs a handful of translation calls plus a TTS
-// bulletin synthesis.
+// no LLM call for translation, Hindi costs a handful of translation calls
+// plus a TTS bulletin synthesis.
 const WARM_LANGUAGES = ["en", "hi"];
+// Full per-article summaries (20 stories × 2 languages = 40 scrape+LLM calls)
+// are the most expensive part of a warm-up run — capped concurrency so it
+// doesn't fire all 40 at once and trip rate limits, same pattern as
+// translate-service's chunking.
+const SUMMARY_CONCURRENCY = 4;
 
 const HOUR_MS = 60 * 60 * 1000;
 // IST is UTC+5:30, so "every hour at :01 IST" lands on minute 31 of every
@@ -18,7 +25,55 @@ export interface WarmRunResult {
   finishedAt: string;
   date: string;
   newsCount: number;
-  languages: { code: string; ok: boolean; error?: string }[];
+  languages: {
+    code: string;
+    ok: boolean;
+    error?: string;
+    summariesWarmed?: number;
+    summariesFailed?: number;
+  }[];
+}
+
+/** Pre-generates the full per-article summary (the "Summarizing..." modal) for every
+ * story in one language, so clicking any headline is instant instead of paying the
+ * scrape+LLM cost live. Limited concurrency to avoid a 20-request burst per language. */
+async function warmSummariesForLanguage(
+  languageCode: string,
+  translated: TranslatedNewsItem[],
+  urlById: Map<string, string>
+): Promise<{ warmed: number; failed: number }> {
+  const lang = getLanguageByCode(languageCode);
+  if (!lang) return { warmed: 0, failed: 0 };
+  const { name: languageName, native: languageNative } = lang;
+
+  let warmed = 0;
+  let failed = 0;
+  let idx = 0;
+
+  async function worker() {
+    while (idx < translated.length) {
+      const item = translated[idx++];
+      try {
+        await generateSummaryBlocking({
+          headline: item.headline,
+          snippet: item.summary,
+          source: item.source,
+          url: urlById.get(item.id),
+          languageName,
+          languageNative,
+        });
+        warmed++;
+      } catch (err) {
+        failed++;
+        console.error(`[cache-warmer] summary "${languageCode}" ${item.id} failed:`, err);
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(SUMMARY_CONCURRENCY, translated.length) }, () => worker())
+  );
+  return { warmed, failed };
 }
 
 /** Runs one warm-up pass immediately — exported so both the hourly scheduler
@@ -33,12 +88,14 @@ export async function runCacheWarmOnce(): Promise<WarmRunResult> {
     source: n.source,
     snippet: n.snippet,
   }));
+  const urlById = new Map(entry.news.map((n) => [n.id, n.url]));
 
   const languages: WarmRunResult["languages"] = [];
   for (const code of WARM_LANGUAGES) {
     try {
-      await translateNewsForLanguage(newsInput, code, entry.date);
-      languages.push({ code, ok: true });
+      const result = await translateNewsForLanguage(newsInput, code, entry.date);
+      const { warmed, failed } = await warmSummariesForLanguage(code, result.news, urlById);
+      languages.push({ code, ok: true, summariesWarmed: warmed, summariesFailed: failed });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       console.error(`[cache-warmer] translate "${code}" failed:`, err);
@@ -62,11 +119,12 @@ function msUntilNextAlignedRun(): number {
 
 /**
  * Runs once an hour, aligned to :01 IST, keeping the (in-memory, per-process)
- * top-news/translation/TTS caches warm for English and Hindi so real
- * visitors almost never pay the first-request LLM/TTS latency. Only
- * useful on a single always-on server process — see the conversation this
- * was built from for why a multi-instance/ephemeral deployment would need a
- * shared external cache instead of this in-process scheduler.
+ * top-news/translation/summary/TTS caches warm for English and Hindi so real
+ * visitors almost never pay first-request LLM/TTS latency anywhere in the
+ * app. Only useful on a single always-on server process — see the
+ * conversation this was built from for why a multi-instance/ephemeral
+ * deployment would need a shared external cache instead of this in-process
+ * scheduler.
  */
 export function startCacheWarmer(): void {
   if (started) return;

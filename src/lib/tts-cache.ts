@@ -40,6 +40,12 @@ export function getOrSynthesizeSpeech(text: string, languageCode: string): Promi
   return pending;
 }
 
+/** Read-only presence check for status reporting — never triggers synthesis. */
+export function isTtsCached(text: string, languageCode: string): boolean {
+  if (!text?.trim()) return false;
+  return cache.has(cacheKey(languageCode, text.trim()));
+}
+
 /**
  * Fire-and-forget: start synthesizing now instead of waiting for the user to
  * press play. By the time they actually click (after reading the headlines),

@@ -1,35 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SYSTEM_PROMPTS } from "@/lib/openai";
 import { getAnthropicClient, CLAUDE_MODEL } from "@/lib/anthropic";
-import { createServerCache, hashKey } from "@/lib/server-cache";
+import { SYSTEM_PROMPTS } from "@/lib/openai";
+import {
+  buildSummaryUserMessage,
+  scrapeWithBudget,
+  summaryCache,
+  summaryCacheKey,
+} from "@/lib/news/summarize-service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 25;
-
-// Was 5000ms — full-length dead time paid on every uncached summary before
-// generation even starts. Scraping is a nice-to-have for extra detail, not
-// worth that much latency; cut it down so the wait is dominated by the LLM
-// call (now streamed) instead of this budget.
-const SCRAPE_BUDGET_MS = 3000;
-// Same headline's summary is identical for everyone in the same language —
-// cache it server-side so a page reload or a second visitor reading the
-// same story skips the scrape + LLM call entirely.
-const SUMMARY_CACHE_TTL_MS = 20 * 60 * 1000;
-const summaryCache = createServerCache<{ summary: string; scraped: boolean }>(SUMMARY_CACHE_TTL_MS);
-
-// Loaded dynamically (and best-effort) so a bundling/runtime issue with the
-// jsdom/cheerio/readability stack can never crash this route — it just
-// falls back to summarizing from the headline/snippet alone.
-async function scrapeWithBudget(url: string): Promise<string> {
-  try {
-    const { scrapeArticle } = await import("@/lib/news/scraper");
-    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SCRAPE_BUDGET_MS));
-    const result = await Promise.race([scrapeArticle(url).catch(() => null), timeout]);
-    return result?.content?.slice(0, 12000) || "";
-  } catch {
-    return "";
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -46,32 +26,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Headline is required." }, { status: 400 });
     }
 
-    const cacheKey = hashKey(headline, source || "", url || "", languageName || "en");
+    const params = { headline, snippet, source, url, languageName, languageNative };
+    const cacheKey = summaryCacheKey(params);
     const cached = summaryCache.get(cacheKey);
     if (cached) {
       // Still stream cached hits through the same plain-text protocol the
-      // client expects — it's just one chunk instead of many.
+      // client expects — it's just one chunk instead of many. A cache hit
+      // here may have come from a real prior visitor or from the hourly
+      // cache-warmer pre-generating all 20 stories up front.
       return new NextResponse(cached.summary, {
         headers: { "Content-Type": "text/plain; charset=utf-8", "X-Scraped": cached.scraped ? "1" : "0" },
       });
     }
 
     const articleContent = url?.trim() ? await scrapeWithBudget(url.trim()) : "";
-
     const client = getAnthropicClient();
-
-    const targetLanguage =
-      languageName && languageName !== "English"
-        ? `${languageName}${languageNative ? ` (${languageNative})` : ""}`
-        : "";
-
-    const userMessage = `
-HEADLINE: ${headline}
-SOURCE: ${source || "Unknown"}
-${snippet ? `SNIPPET: ${snippet}\n` : ""}
-${articleContent ? `ARTICLE TEXT:\n${articleContent}` : "No full article text available — summarize based on the headline and snippet only."}
-${targetLanguage ? `\nWrite the summary entirely in ${targetLanguage}, using its native script. Do not use English.` : ""}
-    `.trim();
+    const userMessage = buildSummaryUserMessage(params, articleContent);
 
     // Streamed instead of a single blocking create() call — a thorough
     // 2-4 paragraph summary can take several seconds to generate in full,
