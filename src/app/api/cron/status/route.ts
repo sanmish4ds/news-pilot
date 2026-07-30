@@ -4,7 +4,7 @@ import { NewsInput, isTranslationCached, peekTranslation } from "@/lib/news/tran
 import { isSummaryCached } from "@/lib/news/summarize-service";
 import { isTtsCached } from "@/lib/tts-cache";
 import { getLanguageByCode } from "@/lib/languages";
-import { stitchBulletinFallback } from "@/lib/radio-bulletin";
+import { lastWarmedBulletins } from "@/lib/cache-warmer";
 
 export const dynamic = "force-dynamic";
 
@@ -73,10 +73,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Compare against the exact bulletin text the warmer actually synthesized
+    // TTS for, not a freshly recomputed one — English's bulletin depends on
+    // each story's one-line snippet, which the background top-news
+    // enrichment can patch in between requests, so recomputing "now" can
+    // legitimately produce different text than what was warmed a moment ago.
     let ttsCached = false;
-    if (LISTENING_ENABLED_CODES.has(code) && lang && translated) {
-      const bulletinScript = stitchBulletinFallback(lang, translated, topNews.date);
-      ttsCached = isTtsCached(bulletinScript, code);
+    if (LISTENING_ENABLED_CODES.has(code)) {
+      const warmedBulletin = lastWarmedBulletins.get(code);
+      ttsCached = !!warmedBulletin && isTtsCached(warmedBulletin, code);
     }
 
     return {

@@ -20,6 +20,15 @@ const TARGET_MINUTE_UTC = 31;
 
 let started = false;
 
+// English translation/bulletin text is deliberately never cached (it's free
+// to recompute) and depends on each story's one-line snippet, which the
+// top-news background enrichment can patch in between requests — so the
+// bulletin text a status check would recompute "now" can legitimately differ
+// from what was actually warmed a moment earlier. Recording the exact text
+// each warm-up run used lets the status endpoint check against ground truth
+// instead of a possibly-stale recomputation.
+export const lastWarmedBulletins = new Map<string, string>();
+
 export interface WarmRunResult {
   startedAt: string;
   finishedAt: string;
@@ -94,6 +103,7 @@ export async function runCacheWarmOnce(): Promise<WarmRunResult> {
   for (const code of WARM_LANGUAGES) {
     try {
       const result = await translateNewsForLanguage(newsInput, code, entry.date);
+      lastWarmedBulletins.set(code, result.bulletinScript);
       const { warmed, failed } = await warmSummariesForLanguage(code, result.news, urlById);
       languages.push({ code, ok: true, summariesWarmed: warmed, summariesFailed: failed });
     } catch (err) {
