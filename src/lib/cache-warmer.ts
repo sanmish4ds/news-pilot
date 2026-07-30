@@ -127,27 +127,43 @@ function msUntilNextAlignedRun(): number {
   return next.getTime() - now.getTime();
 }
 
+// After the boot-time run below, don't let the aligned schedule (or the
+// hourly interval) fire again within this long of it — otherwise a deploy
+// that happens to land a few minutes before the next :01 IST mark would
+// trigger two full warm-up runs (40+ LLM/TTS calls each) back to back.
+const MIN_GAP_MS = 10 * 60 * 1000;
+let lastRunAt = 0;
+
 /**
  * Runs once an hour, aligned to :01 IST, keeping the (in-memory, per-process)
  * top-news/translation/summary/TTS caches warm for English and Hindi so real
  * visitors almost never pay first-request LLM/TTS latency anywhere in the
- * app. Only useful on a single always-on server process — see the
- * conversation this was built from for why a multi-instance/ephemeral
- * deployment would need a shared external cache instead of this in-process
- * scheduler.
+ * app. Also runs once immediately on startup — instrumentation.ts calls this
+ * as soon as the server process boots, which is right after every deploy —
+ * so a fresh deploy never sits cold until the next aligned hour. Only useful
+ * on a single always-on server process — see the conversation this was
+ * built from for why a multi-instance/ephemeral deployment would need a
+ * shared external cache instead of this in-process scheduler.
  */
 export function startCacheWarmer(): void {
   if (started) return;
   started = true;
 
   const runAndSwallow = () => {
+    lastRunAt = Date.now();
     runCacheWarmOnce().catch((err) => console.error("[cache-warmer] run failed:", err));
   };
 
+  // Warm immediately on boot (covers every deploy/restart) instead of
+  // waiting for the next aligned mark.
+  runAndSwallow();
+
   const scheduleNext = () => {
     setTimeout(() => {
-      runAndSwallow();
-      setInterval(runAndSwallow, HOUR_MS);
+      if (Date.now() - lastRunAt >= MIN_GAP_MS) runAndSwallow();
+      setInterval(() => {
+        if (Date.now() - lastRunAt >= MIN_GAP_MS) runAndSwallow();
+      }, HOUR_MS);
     }, msUntilNextAlignedRun());
   };
   scheduleNext();
