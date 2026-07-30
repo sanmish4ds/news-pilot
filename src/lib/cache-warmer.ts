@@ -13,29 +13,42 @@ const TARGET_MINUTE_UTC = 31;
 
 let started = false;
 
-async function warmOnce(): Promise<void> {
-  const startedAt = new Date().toISOString();
-  try {
-    const entry = await refreshTopNews();
-    const newsInput: NewsInput[] = entry.news.map((n) => ({
-      id: n.id,
-      rank: n.rank,
-      title: n.title,
-      source: n.source,
-      snippet: n.snippet,
-    }));
+export interface WarmRunResult {
+  startedAt: string;
+  finishedAt: string;
+  date: string;
+  newsCount: number;
+  languages: { code: string; ok: boolean; error?: string }[];
+}
 
-    for (const code of WARM_LANGUAGES) {
-      try {
-        await translateNewsForLanguage(newsInput, code, entry.date);
-      } catch (err) {
-        console.error(`[cache-warmer] translate "${code}" failed:`, err);
-      }
+/** Runs one warm-up pass immediately — exported so both the hourly scheduler
+ * below and the manual `/api/cron/warm-cache` trigger share the same logic. */
+export async function runCacheWarmOnce(): Promise<WarmRunResult> {
+  const startedAt = new Date().toISOString();
+  const entry = await refreshTopNews();
+  const newsInput: NewsInput[] = entry.news.map((n) => ({
+    id: n.id,
+    rank: n.rank,
+    title: n.title,
+    source: n.source,
+    snippet: n.snippet,
+  }));
+
+  const languages: WarmRunResult["languages"] = [];
+  for (const code of WARM_LANGUAGES) {
+    try {
+      await translateNewsForLanguage(newsInput, code, entry.date);
+      languages.push({ code, ok: true });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      console.error(`[cache-warmer] translate "${code}" failed:`, err);
+      languages.push({ code, ok: false, error });
     }
-    console.log(`[cache-warmer] warmed ${WARM_LANGUAGES.join(", ")} — started ${startedAt}`);
-  } catch (err) {
-    console.error("[cache-warmer] run failed:", err);
   }
+
+  const finishedAt = new Date().toISOString();
+  console.log(`[cache-warmer] warmed ${WARM_LANGUAGES.join(", ")} — started ${startedAt}, finished ${finishedAt}`);
+  return { startedAt, finishedAt, date: entry.date, newsCount: entry.news.length, languages };
 }
 
 function msUntilNextAlignedRun(): number {
@@ -59,10 +72,14 @@ export function startCacheWarmer(): void {
   if (started) return;
   started = true;
 
+  const runAndSwallow = () => {
+    runCacheWarmOnce().catch((err) => console.error("[cache-warmer] run failed:", err));
+  };
+
   const scheduleNext = () => {
     setTimeout(() => {
-      void warmOnce();
-      setInterval(warmOnce, HOUR_MS);
+      runAndSwallow();
+      setInterval(runAndSwallow, HOUR_MS);
     }, msUntilNextAlignedRun());
   };
   scheduleNext();

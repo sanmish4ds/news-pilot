@@ -700,41 +700,37 @@ export function NewsRadioApp() {
       {/* Header */}
       <header className="relative overflow-hidden border-b border-white/5">
         <div className="absolute inset-0 bg-gradient-to-br from-teal-950/80 via-[#0a0f1a] to-indigo-950/60" />
-        <div className="relative max-w-4xl mx-auto px-4 py-8 sm:px-8 text-center">
+        <div className="relative max-w-4xl mx-auto px-4 py-10 sm:px-8 text-center">
           <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight leading-tight">
             {ui.title}
           </h1>
-          {date && <p className="text-lg text-teal-200/70 mt-2">{date}</p>}
+          {date && <p className="text-lg text-teal-200/70 mt-3">{date}</p>}
           <p className="text-base text-slate-400 mt-1">{ui.subtitle}</p>
+
+          {/* Language toggle — English / Hindi */}
+          <div className="mt-7 inline-flex rounded-full border border-white/10 bg-white/5 p-1 shadow-inner">
+            {ALL_LANGUAGES.map((lang) => (
+              <button
+                key={lang.code}
+                type="button"
+                onClick={() => setLanguage(lang)}
+                disabled={busy}
+                aria-pressed={language.code === lang.code}
+                className={cn(
+                  "min-w-[112px] rounded-full px-6 py-2.5 text-base font-semibold transition-all disabled:cursor-not-allowed",
+                  language.code === lang.code
+                    ? "bg-teal-400 text-[#06110f] shadow-lg shadow-teal-500/25"
+                    : "text-slate-300 hover:text-white"
+                )}
+              >
+                {lang.native}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 sm:px-8 space-y-6 pb-16">
-        {/* Language picker */}
-        <section>
-          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 text-center">
-            {ui.chooseLanguage}
-          </h2>
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide snap-x">
-            {ALL_LANGUAGES.map((lang) => (
-              <button
-                key={lang.code}
-                onClick={() => setLanguage(lang)}
-                disabled={busy}
-                className={cn(
-                  "flex-shrink-0 snap-start min-w-[88px] rounded-xl border px-3 py-3 text-center transition-all",
-                  language.code === lang.code
-                    ? "border-teal-400 bg-teal-500/15 text-white shadow-lg shadow-teal-500/10"
-                    : "border-white/10 bg-white/5 text-slate-300 hover:border-white/20"
-                )}
-              >
-                <span className="block text-lg font-bold leading-tight">{lang.native}</span>
-                <span className="block text-xs text-slate-500 mt-0.5">{lang.name}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
         {error && (
           <p className="text-center text-red-400 text-base bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
             {error}

@@ -25,3 +25,5 @@ services:
         sync: false
       - key: ELEVENLABS_VOICE_ID_HI
         sync: false
+      - key: CRON_SECRET
+        sync: false
