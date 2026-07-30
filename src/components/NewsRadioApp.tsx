@@ -50,8 +50,8 @@ function formatTime(seconds: number): string {
 
 const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
 
-/** Languages with a TTS voice wired up (English/Hindi/Maithili via ElevenLabs, or Bhashini if configured) — listening controls show only for these. */
-const LISTENING_ENABLED_CODES = new Set(["en", "hi", "mai"]);
+/** Listening is English-only — audio player controls show only for this language. */
+const LISTENING_ENABLED_CODES = new Set(["en"]);
 
 const SUMMARY_PLAYBACK_LABEL = "Summary";
 
@@ -626,13 +626,16 @@ export function NewsRadioApp() {
   }, [loadNews]);
 
   useEffect(() => {
-    fetchJson<{
-      enabled?: boolean;
-      bhashini?: boolean;
-      elevenlabs?: boolean;
-    }>(`/api/tts-status?lang=${language.code}`)
+    // Listening is English-only — skip the network round-trip entirely for
+    // every other language instead of checking (and immediately discarding)
+    // TTS readiness on every tab switch.
+    if (language.code !== "en") {
+      setServerTtsReady(false);
+      return;
+    }
+    fetchJson<{ enabled?: boolean; elevenlabs?: boolean }>(`/api/tts-status?lang=${language.code}`)
       .then((d) => {
-        setServerTtsReady(!!(d.enabled && (d.bhashini || d.elevenlabs)));
+        setServerTtsReady(!!(d.enabled && d.elevenlabs));
       })
       .catch(() => {
         setServerTtsReady(false);

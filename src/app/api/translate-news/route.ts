@@ -7,9 +7,10 @@ import { stitchBulletinFallback } from "@/lib/radio-bulletin";
 import { createServerCache, hashKey } from "@/lib/server-cache";
 import { warmTtsCache } from "@/lib/tts-cache";
 
-// Listening is only wired up for these languages — no point pre-warming
-// TTS audio that's never played (see LISTENING_ENABLED_CODES in NewsRadioApp.tsx).
-const LISTENING_ENABLED_CODES = new Set(["en", "hi", "mai"]);
+// Listening is English-only — no point pre-warming TTS audio for a language
+// whose player controls are never shown (see LISTENING_ENABLED_CODES in
+// NewsRadioApp.tsx).
+const LISTENING_ENABLED_CODES = new Set(["en"]);
 
 // Same day's news translates identically for every visitor in a given
 // language — cache the result server-side so only the first person to pick

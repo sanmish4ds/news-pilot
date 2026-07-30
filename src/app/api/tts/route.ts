@@ -29,7 +29,6 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "audio/mpeg",
         "X-TTS-Provider": result.provider,
-        "X-TTS-Fallback": result.usesFallback ? "1" : "0",
         "Cache-Control": "private, max-age=3600",
       },
     });

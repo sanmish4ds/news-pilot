@@ -6,7 +6,7 @@ Audio-first news for everyone — especially listeners aged 50+ who prefer to **
 
 - **Top 10 India news** refreshed from Google News RSS
 - **22 constitutional languages** + English
-- **ElevenLabs** — natural voices for English, Hindi, Maithili and more (Bhashini as an optional native-voice fallback for low-resource languages)
+- **ElevenLabs** — English radio bulletin audio (listening is English-only; every language gets translated headlines)
 - **Two listen modes** — full radio bulletin or each story individually
 - **Accessible UI** — large buttons, high contrast, audio-first
 
@@ -62,7 +62,6 @@ Netlify → **Site configuration** → **Environment variables** → **Add a var
 |----------|----------|
 | `OPENAI_API_KEY` | Yes |
 | `ELEVENLABS_API_KEY` | Yes |
-| `BHASHINI_API_KEY` | No (native voice for low-resource languages) |
 
 Redeploy after adding variables (**Deploys** → **Trigger deploy** → **Clear cache and deploy site**).
 

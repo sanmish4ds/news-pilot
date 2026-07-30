@@ -4,7 +4,6 @@ import { synthesizeSpeech } from "./tts-router";
 export interface TtsResult {
   mp3: Buffer;
   provider: string;
-  usesFallback: boolean;
 }
 
 const TTL_MS = 20 * 60 * 1000;
@@ -19,8 +18,7 @@ function cacheKey(languageCode: string, text: string): string {
 }
 
 async function synthesizeAndCache(text: string, languageCode: string, key: string): Promise<TtsResult> {
-  const synthesized = await synthesizeSpeech(text, languageCode);
-  const result: TtsResult = { ...synthesized, usesFallback: !!synthesized.usesFallback };
+  const result = await synthesizeSpeech(text, languageCode);
   cache.set(key, result);
   return result;
 }
