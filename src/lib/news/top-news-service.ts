@@ -7,10 +7,11 @@ export interface TopNewsCacheEntry {
   fetchedAt: number;
 }
 
-// Longer than the hourly cache-warmer's cadence (see cache-warmer.ts) plus a
-// buffer, so a warm-up run's result stays valid for real visitors right up
-// until the next run replaces it.
-const CACHE_TTL_MS = 75 * 60 * 1000;
+// Long enough that a single day's news translates/summarizes/synthesizes
+// exactly once — the first visitor of the window pays the real cost, every
+// request after that (from any visitor) reuses the same cached result
+// instead of triggering a duplicate call.
+const CACHE_TTL_MS = 25 * 60 * 60 * 1000;
 
 // Module-level cache — `dynamic = "force-dynamic"` on the route opts it out
 // of Next's built-in data cache, so a live RSS fetch (Google News) would
@@ -29,13 +30,13 @@ function formatDate(): string {
 }
 
 // Guards against firing a second background brief-summary generation while
-// one is already in flight for the current cache window (e.g. the client's
-// enrichment poll landing while the first request's own background job
-// hasn't finished yet).
+// one is already in flight for the current cache window (e.g. two visitors'
+// requests landing close together before the first one's enrichment has
+// finished).
 let briefsInFlight: Promise<void> | null = null;
 
 /** Kicks off brief-summary generation without blocking the caller, then patches the
- * warm cache in place once done so the next read within the cache window is enriched. */
+ * cache in place once done so the next read within the cache window is enriched. */
 function warmBriefSummaries(news: TopNewsItem[], date: string, fetchedAt: number): void {
   if (briefsInFlight) return;
   briefsInFlight = generateBriefSummaries(news)
@@ -56,23 +57,7 @@ function warmBriefSummaries(news: TopNewsItem[], date: string, fetchedAt: number
     });
 }
 
-/** Returns the cache only if still within its freshness window — never triggers a fetch. */
-export function getFreshTopNews(): TopNewsCacheEntry | null {
-  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return cache;
-  return null;
-}
-
-/** Returns whatever is cached regardless of freshness — a stale result beats a hard failure. */
-export function getStaleTopNews(): TopNewsCacheEntry | null {
-  return cache;
-}
-
-/**
- * Fetches fresh headlines and replaces the cache unconditionally. Used both
- * by the on-demand route (when its cache has expired) and by the hourly
- * cache-warmer (which always wants a fresh pull, not a cache hit).
- */
-export async function refreshTopNews(limit = 20): Promise<TopNewsCacheEntry> {
+async function refreshTopNews(limit: number): Promise<TopNewsCacheEntry> {
   const news = await fetchTopIndiaNews(limit);
   if (!news.length) {
     if (cache) return cache;
@@ -90,15 +75,14 @@ export async function refreshTopNews(limit = 20): Promise<TopNewsCacheEntry> {
   return cache;
 }
 
-/** Cache hit, or a fresh fetch if expired/empty — the read path used by the on-demand route. */
+/** Cache hit, or a fresh fetch if expired/empty/never fetched — the only entry point
+ * into top-news, so a given day's headlines are ever fetched exactly once. */
 export async function getOrRefreshTopNews(limit = 20): Promise<TopNewsCacheEntry> {
-  const fresh = getFreshTopNews();
-  if (fresh) return fresh;
+  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return cache;
   try {
     return await refreshTopNews(limit);
   } catch (error) {
-    const stale = getStaleTopNews();
-    if (stale) return stale;
+    if (cache) return cache;
     throw error;
   }
 }

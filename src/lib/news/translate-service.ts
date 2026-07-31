@@ -1,4 +1,4 @@
-import { getAnthropicClient, claudeStructured } from "@/lib/anthropic";
+import { getOpenAIClient, openaiStructured } from "@/lib/openai";
 import { ConstitutionalLanguage, getLanguageByCode } from "@/lib/languages";
 import { buildNewsChunkPrompt, buildUiOnlyPrompt } from "@/lib/translation-prompts";
 import { englishUi, UiStrings } from "@/lib/ui-strings";
@@ -12,11 +12,10 @@ import { warmTtsCache } from "@/lib/tts-cache";
 const LISTENING_ENABLED_CODES = new Set(["en", "hi"]);
 
 // Same day's news translates identically for every visitor in a given
-// language — cache the result server-side so only the first caller (a real
-// visitor, or the hourly cache-warmer) each window pays for the LLM call;
-// everyone after gets it instantly. TTL is longer than the warmer's cadence
-// plus a buffer, so a warm-up run's result stays valid until the next one.
-const TRANSLATION_CACHE_TTL_MS = 75 * 60 * 1000;
+// language — cache the result server-side so only the first visitor each
+// window pays for the LLM call and everyone after gets it instantly, with
+// no duplicate translation calls for the same day/language.
+const TRANSLATION_CACHE_TTL_MS = 25 * 60 * 60 * 1000;
 const translationCache = createServerCache<{
   news: TranslatedNewsItem[];
   ui: UiStrings;
@@ -92,33 +91,6 @@ export interface TranslateNewsResult {
   translationDegraded?: boolean;
 }
 
-function translationCacheKeyFor(news: NewsInput[], languageCode: string, dateLabel: string): string {
-  return hashKey(
-    languageCode,
-    dateLabel,
-    news.map((n) => n.id).join(","),
-    news.map((n) => n.title).join("|")
-  );
-}
-
-/** Read-only presence check for status reporting — never triggers translation. English is
- * always instant/uncached so it's reported as always "ready". */
-export function isTranslationCached(news: NewsInput[], languageCode: string, dateLabel: string): boolean {
-  if (languageCode === "en") return true;
-  return translationCache.has(translationCacheKeyFor(news, languageCode, dateLabel));
-}
-
-/** Read-only cache read for status reporting — returns the cached translation (including
- * bulletinScript) without triggering generation, or undefined if not cached. English isn't
- * cached (it's free to compute) so this returns undefined for it; callers should special-case it. */
-export function peekTranslation(
-  news: NewsInput[],
-  languageCode: string,
-  dateLabel: string
-): { news: TranslatedNewsItem[]; ui: UiStrings; bulletinScript: string } | undefined {
-  return translationCache.get(translationCacheKeyFor(news, languageCode, dateLabel));
-}
-
 function englishFallback(items: NewsInput[]): TranslatedNewsItem[] {
   return items.map((item) => ({
     id: item.id,
@@ -131,11 +103,9 @@ function englishFallback(items: NewsInput[]): TranslatedNewsItem[] {
 
 /**
  * Translates a day's headlines into the given language (server-cached per
- * day/language), stitches the radio bulletin script, and — for English/Hindi
- * — kicks off a background TTS warm-up of that bulletin. Shared by the
- * on-demand /api/translate-news route and the hourly cache-warmer, so a
- * warm-up run and a real visitor's request produce (and reuse) the exact
- * same cache entry.
+ * day/language, so a given day/language is only ever translated once), and
+ * — for English/Hindi — kicks off a background TTS warm-up of the bulletin
+ * for whoever requested this translation.
  */
 export async function translateNewsForLanguage(
   news: NewsInput[],
@@ -171,7 +141,7 @@ export async function translateNewsForLanguage(
     return { ...cachedResult, language: lang };
   }
 
-  const client = getAnthropicClient();
+  const client = getOpenAIClient();
 
   // Translate the news array in a few moderate-size parallel chunks (plus a
   // separate parallel call for the UI labels): a single call covering all 20
@@ -179,8 +149,8 @@ export async function translateNewsForLanguage(
   // enough with no bytes flowing to trip an upstream proxy's inactivity
   // timeout (seen as a raw "Inactivity Timeout" HTML page instead of our
   // JSON) — but too many small chunks reintroduces the concurrent-request
-  // burst that used to trigger Anthropic rate-limit retries. A handful of
-  // ~3-item chunks keeps both risks low.
+  // burst that used to trigger rate-limit retries. A handful of ~3-item
+  // chunks keeps both risks low.
   const newsChunkPrompt = buildNewsChunkPrompt(lang);
   // Non-Latin scripts (Devanagari, Bengali, Tamil, …) cost noticeably more
   // output tokens per character than English/Latin script does, plus JSON
@@ -188,17 +158,17 @@ export async function translateNewsForLanguage(
   // Latin text and was silently truncating Maithili's tool-call JSON mid-
   // object on larger batches, which surfaced as "Translation returned no
   // results". Give non-English scripts a bigger per-item budget and a
-  // higher ceiling (claude-sonnet-4-6 supports well beyond 4096 output).
+  // higher ceiling.
   const perItemTokens = languageCode === "en" ? 220 : 450;
   const maxTokensCap = languageCode === "en" ? 4096 : 8192;
   // Chunks run in parallel (Promise.all below), so total wall time is
   // bounded by the SLOWEST chunk, not their sum — measured ~4s/item plus
-  // ~3.5s fixed overhead per Claude call for Hindi/Maithili, so an 8-item
-  // chunk alone took ~36s, comfortably past most platforms' function/
-  // gateway timeout on its own regardless of how few chunks there were.
-  // A smaller chunk size keeps every individual call's wall time short;
-  // parallel fan-out at 4-5 concurrent calls didn't show meaningful
-  // rate-limit slowdown in testing, so this is a straight win.
+  // fixed overhead per call for Hindi/Maithili, so an 8-item chunk alone
+  // took ~36s, comfortably past most platforms' function/gateway timeout on
+  // its own regardless of how few chunks there were. A smaller chunk size
+  // keeps every individual call's wall time short; parallel fan-out at 4-5
+  // concurrent calls didn't show meaningful rate-limit slowdown in testing,
+  // so this is a straight win.
   const CHUNK_SIZE = 3;
   const chunks: NewsInput[][] = [];
   for (let i = 0; i < news.length; i += CHUNK_SIZE) {
@@ -206,7 +176,7 @@ export async function translateNewsForLanguage(
   }
 
   const chunkPromises = chunks.map((chunk) =>
-    claudeStructured<{ news: TranslatedNewsItem[] }>(client, {
+    openaiStructured<{ news: TranslatedNewsItem[] }>(client, {
       system: newsChunkPrompt,
       userContent: JSON.stringify(chunk),
       maxTokens: Math.min(maxTokensCap, 300 + chunk.length * perItemTokens),
@@ -220,7 +190,7 @@ export async function translateNewsForLanguage(
     }).catch(() => ({ news: [] as TranslatedNewsItem[] }))
   );
 
-  const uiPromise = claudeStructured<{ ui: UiStrings }>(client, {
+  const uiPromise = openaiStructured<{ ui: UiStrings }>(client, {
     system: buildUiOnlyPrompt(lang, news.length),
     userContent: "Translate the UI labels.",
     maxTokens: 600,

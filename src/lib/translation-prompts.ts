@@ -15,7 +15,7 @@ const LANGUAGE_RULES: Record<string, string> = {
 };
 
 export function getTranslationModel(): string {
-  return "claude-sonnet-4-6";
+  return "gpt-4o-mini";
 }
 
 /** Prompt used to translate the full news array in a single call. */

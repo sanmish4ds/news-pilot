@@ -6,14 +6,15 @@ export interface TtsResult {
   provider: string;
 }
 
-// Longer than the hourly cache-warmer's cadence (see cache-warmer.ts) plus a
-// buffer, so bulletin audio synthesized by one warm-up run stays cached for
-// real listeners until the next run replaces it.
-const TTL_MS = 75 * 60 * 1000;
+// Long enough that the same bulletin/summary text is only ever synthesized
+// once per day — the first listener pays the real ElevenLabs cost, everyone
+// after that within the window gets the identical cached audio.
+const TTL_MS = 25 * 60 * 60 * 1000;
 const cache = createServerCache<TtsResult>(TTL_MS);
-// Dedupes concurrent requests for the same text — without this, a background
-// warm-up and a user's play click landing at the same time would trigger two
-// separate (expensive) synthesis calls for identical audio.
+// Dedupes concurrent requests for the same text — without this, two
+// requests landing close together (e.g. the fire-and-forget bulletin
+// pre-fetch and a user's play click) would trigger two separate (expensive)
+// synthesis calls for identical audio.
 const inFlight = new Map<string, Promise<TtsResult>>();
 
 function cacheKey(languageCode: string, text: string): string {
@@ -38,12 +39,6 @@ export function getOrSynthesizeSpeech(text: string, languageCode: string): Promi
     inFlight.set(key, pending);
   }
   return pending;
-}
-
-/** Read-only presence check for status reporting — never triggers synthesis. */
-export function isTtsCached(text: string, languageCode: string): boolean {
-  if (!text?.trim()) return false;
-  return cache.has(cacheKey(languageCode, text.trim()));
 }
 
 /**

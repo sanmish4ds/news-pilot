@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAnthropicClient, CLAUDE_MODEL } from "@/lib/anthropic";
-import { SYSTEM_PROMPTS } from "@/lib/openai";
+import { getOpenAIClient, OPENAI_MINI_MODEL, SYSTEM_PROMPTS } from "@/lib/openai";
 import {
   buildSummaryUserMessage,
   scrapeWithBudget,
@@ -32,15 +31,14 @@ export async function POST(req: NextRequest) {
     if (cached) {
       // Still stream cached hits through the same plain-text protocol the
       // client expects — it's just one chunk instead of many. A cache hit
-      // here may have come from a real prior visitor or from the hourly
-      // cache-warmer pre-generating all 20 stories up front.
+      // here means some prior visitor already paid for this exact summary.
       return new NextResponse(cached.summary, {
         headers: { "Content-Type": "text/plain; charset=utf-8", "X-Scraped": cached.scraped ? "1" : "0" },
       });
     }
 
     const articleContent = url?.trim() ? await scrapeWithBudget(url.trim()) : "";
-    const client = getAnthropicClient();
+    const client = getOpenAIClient();
     const userMessage = buildSummaryUserMessage(params, articleContent);
 
     // Streamed instead of a single blocking create() call — a thorough
@@ -49,11 +47,14 @@ export async function POST(req: NextRequest) {
     // done. Streaming shows the summary as it's written, which is most of
     // the perceived "summarizing is slow" fix (the actual generation time
     // doesn't change, but the wait no longer feels dead).
-    const anthropicStream = client.messages.stream({
-      model: CLAUDE_MODEL,
+    const openaiStream = await client.chat.completions.create({
+      model: OPENAI_MINI_MODEL,
       max_tokens: 1000,
-      system: SYSTEM_PROMPTS.headlineSummary,
-      messages: [{ role: "user", content: userMessage }],
+      stream: true,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPTS.headlineSummary },
+        { role: "user", content: userMessage },
+      ],
     });
 
     let full = "";
@@ -61,11 +62,13 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         const encoder = new TextEncoder();
         try {
-          anthropicStream.on("text", (delta) => {
-            full += delta;
-            controller.enqueue(encoder.encode(delta));
-          });
-          await anthropicStream.finalMessage();
+          for await (const chunk of openaiStream) {
+            const delta = chunk.choices[0]?.delta?.content || "";
+            if (delta) {
+              full += delta;
+              controller.enqueue(encoder.encode(delta));
+            }
+          }
           summaryCache.set(cacheKey, { summary: full.trim(), scraped: !!articleContent });
           controller.close();
         } catch (err) {
@@ -73,7 +76,7 @@ export async function POST(req: NextRequest) {
         }
       },
       cancel() {
-        anthropicStream.abort();
+        openaiStream.controller.abort();
       },
     });
 

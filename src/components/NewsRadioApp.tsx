@@ -672,7 +672,7 @@ export function NewsRadioApp() {
     let cancelled = false;
     // Sequential, not Promise.all — firing every prewarm language's
     // translation call at once is exactly the concurrent-request burst that
-    // used to trip Anthropic's rate limiting and stall the request the user
+    // used to trip provider rate limiting and stall the request the user
     // is actually waiting on. One at a time keeps this purely a background
     // nicety instead of competing with the active tab's own translation.
     (async () => {

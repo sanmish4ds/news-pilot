@@ -1,4 +1,4 @@
-import { getAnthropicClient, claudeStructured } from "@/lib/anthropic";
+import { getOpenAIClient, openaiStructured } from "@/lib/openai";
 import { TopNewsItem } from "./top-news";
 
 const CHUNK_SIZE = 5;
@@ -15,7 +15,7 @@ export async function generateBriefSummaries(
 ): Promise<Record<string, string>> {
   if (!items.length) return {};
 
-  const client = getAnthropicClient();
+  const client = getOpenAIClient();
   const chunks: (typeof items)[] = [];
   for (let i = 0; i < items.length; i += CHUNK_SIZE) {
     chunks.push(items.slice(i, i + CHUNK_SIZE));
@@ -25,7 +25,7 @@ export async function generateBriefSummaries(
 
   const chunkResults = await Promise.all(
     chunks.map((chunk) =>
-      claudeStructured<{ summaries: { id: string; summary: string }[] }>(client, {
+      openaiStructured<{ summaries: { id: string; summary: string }[] }>(client, {
         system: systemPrompt,
         userContent: JSON.stringify(chunk.map((i) => ({ id: i.id, title: i.title, source: i.source }))),
         maxTokens: 700,

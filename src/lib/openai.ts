@@ -8,6 +8,72 @@ export function getOpenAIClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
+/** Used for the news-pilot pipeline (translation, brief/full summaries) — a
+ * separate constant from the `gpt-4o` default used by the research/drafting
+ * panels elsewhere, since those are unrelated features that shouldn't be
+ * coupled to this one's model choice. */
+export const OPENAI_MINI_MODEL = "gpt-4o-mini";
+
+/** Plain (non-streamed) text completion. */
+export async function openaiText(
+  client: OpenAI,
+  options: { system: string; userContent: string; maxTokens: number }
+): Promise<string> {
+  const response = await client.chat.completions.create({
+    model: OPENAI_MINI_MODEL,
+    max_tokens: options.maxTokens,
+    messages: [
+      { role: "system", content: options.system },
+      { role: "user", content: options.userContent },
+    ],
+  });
+  return (response.choices[0]?.message?.content || "").trim();
+}
+
+/**
+ * Requests structured JSON via a forced function call instead of asking the
+ * model to write raw JSON text — the API returns a well-formed arguments
+ * string tied to the function schema, so there's much less risk of the
+ * model wrapping it in markdown fences or commentary than a plain-text ask.
+ */
+export async function openaiStructured<T>(
+  client: OpenAI,
+  options: {
+    system: string;
+    userContent: string;
+    maxTokens: number;
+    toolName: string;
+    toolDescription: string;
+    inputSchema: Record<string, unknown>;
+  }
+): Promise<T> {
+  const response = await client.chat.completions.create({
+    model: OPENAI_MINI_MODEL,
+    max_tokens: options.maxTokens,
+    messages: [
+      { role: "system", content: options.system },
+      { role: "user", content: options.userContent },
+    ],
+    tools: [
+      {
+        type: "function",
+        function: {
+          name: options.toolName,
+          description: options.toolDescription,
+          parameters: options.inputSchema,
+        },
+      },
+    ],
+    tool_choice: { type: "function", function: { name: options.toolName } },
+  });
+
+  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+  if (!toolCall || toolCall.type !== "function") {
+    throw new Error("OpenAI did not return a tool call");
+  }
+  return JSON.parse(toolCall.function.arguments) as T;
+}
+
 export const SYSTEM_PROMPTS = {
   headlineSummary: `You are a news editor writing a full but readable briefing for someone who only saw a headline and wants to actually understand the story, not just the gist.
 

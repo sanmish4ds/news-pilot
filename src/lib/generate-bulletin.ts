@@ -1,4 +1,4 @@
-import { getAnthropicClient, claudeText, CLAUDE_MODEL } from "./anthropic";
+import { getOpenAIClient, openaiText } from "./openai";
 import { ConstitutionalLanguage } from "./languages";
 import {
   buildRadioBulletinPrompt,
@@ -14,21 +14,15 @@ export async function generateRadioBulletin(
   if (!stories.length) return "";
 
   try {
-    const client = getAnthropicClient();
+    const client = getOpenAIClient();
 
-    const response = await client.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 4500,
-      system: buildRadioBulletinPrompt(lang, dateLabel, stories.length),
-      messages: [
-        {
-          role: "user",
-          content: `Write the full radio bulletin for these ${stories.length} stories:\n${JSON.stringify(stories)}`,
-        },
-      ],
-    });
-
-    const script = claudeText(response).trim();
+    const script = (
+      await openaiText(client, {
+        system: buildRadioBulletinPrompt(lang, dateLabel, stories.length),
+        userContent: `Write the full radio bulletin for these ${stories.length} stories:\n${JSON.stringify(stories)}`,
+        maxTokens: 4500,
+      })
+    ).trim();
     if (script.length > 200) return script;
   } catch {
     /* fallback below */
